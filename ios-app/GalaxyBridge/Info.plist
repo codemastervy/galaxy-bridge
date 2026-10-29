@@ -2,16 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Galaxy Bridge connects to your Galaxy Watch over Bluetooth.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>Galaxy Bridge saves heart rate, steps, energy and distance from your Galaxy Watch to Apple Health.</string>
-	<key>NSHealthShareUsageDescription</key>
-	<string>Galaxy Bridge only writes data to Apple Health; it does not read it.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>The camera lets your watch act as a remote shutter.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Photos you take with the watch shutter are saved to your library.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
