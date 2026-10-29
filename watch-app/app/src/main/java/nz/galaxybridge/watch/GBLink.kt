@@ -23,6 +23,12 @@ object GBLink {
     private const val FIRST: Int = 0x01
     private const val LAST: Int = 0x02
 
+    /** Scan-response service data; matches GBAdvert in GBLink.swift. */
+    fun advert(readyToPair: Boolean, name: String): ByteArray {
+        val ascii = name.filter { it.code in 0x20..0x7E }.take(10).toByteArray(Charsets.US_ASCII)
+        return byteArrayOf(1, if (readyToPair) 1 else 0) + ascii
+    }
+
     fun chunks(message: ByteArray, maxChunk: Int): List<ByteArray> {
         require(maxChunk > 5) { "ATT payload too small" }
         val body = ByteBuffer.allocate(4 + message.size).putInt(message.size).put(message).array()

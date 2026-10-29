@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Galaxy Bridge mark: round watch with bezel, health ring and heart. 108dp canvas, art inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- watch body -->
+    <path android:fillColor="#12142A"
+        android:pathData="M54,25a29,29 0,1 1,0 58a29,29 0,1 1,0 -58z" />
+    <!-- bezel -->
+    <path android:strokeColor="#D9E0FF" android:strokeWidth="2.6"
+        android:pathData="M54,26.5a27.5,27.5 0,1 1,0 55a27.5,27.5 0,1 1,0 -55z" />
+    <!-- 12/3/6/9 ticks -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M54,31.5v3.5M54,73v3.5M31.5,54h3.5M73,54h3.5" />
+    <!-- health ring -->
+    <path android:strokeColor="#2ED1DB" android:strokeWidth="3.4" android:strokeLineCap="round"
+        android:pathData="M54,39a15,15 0,1 1,-14.3 10.4" />
+    <!-- heart -->
+    <path android:fillColor="#FF5266"
+        android:pathData="M54,62.5c-5.5,-3.8 -9,-7.2 -9,-10.8c0,-2.7 2,-4.7 4.5,-4.7c1.8,0 3.4,1 4.5,2.6c1.1,-1.6 2.7,-2.6 4.5,-2.6c2.5,0 4.5,2 4.5,4.7c0,3.6 -3.5,7 -9,10.8z" />
+</vector>

@@ -51,12 +51,27 @@ class LinkService : Service() {
             context.startForegroundService(Intent(context, LinkService::class.java))
         }
 
-        fun sendShutter() = instance?.send(WatchMessages.shutter())
+        /** Prefers the Bluetooth remote (works in the iPhone Camera app); falls back to GBLink. */
+        fun sendShutter() {
+            val service = instance ?: return
+            if (!service.hid.press()) service.send(WatchMessages.shutter())
+        }
+
+        val battery = MutableStateFlow<Int?>(null)
+
+        /** Epoch ms until which a new phone may pair; 0 when closed. */
+        val pairingUntil = MutableStateFlow(0L)
+        val hasPhone = MutableStateFlow(false)
+        private const val PAIRING_WINDOW_MS = 120_000L
+
+        fun openPairing() = instance?.setPairingWindow(true)
+        fun cancelPairing() = instance?.setPairingWindow(false)
 
         fun samplesQueued() = instance?.flushQueue()
 
         fun forgetPhone(context: Context) {
             context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_TRUSTED).apply()
+            hasPhone.value = false
             instance?.disconnectAll()
         }
 
@@ -67,6 +82,7 @@ class LinkService : Service() {
     private var server: BluetoothGattServer? = null
     private lateinit var toPhone: BluetoothGattCharacteristic
     private lateinit var queue: SampleQueue
+    lateinit var hid: HidShutter
 
     private var phone: BluetoothDevice? = null
     private var subscribed = false
@@ -86,14 +102,18 @@ class LinkService : Service() {
         pending.value = queue.size()
         startInForeground()
         manager = getSystemService(BluetoothManager::class.java)
+        hasPhone.value = trustedAddress() != null
         openServer()
         advertise()
+        hid = HidShutter(this) { getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TRUSTED, null) }
+        hid.start()
         status.value = Status.WAITING
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        hid.stop()
         manager.adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
         server?.close()
         instance = null
@@ -118,17 +138,19 @@ class LinkService : Service() {
         toPhone = BluetoothGattCharacteristic(
             GBLink.TO_PHONE,
             BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED,
+            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED_MITM,
         ).apply {
+            // MITM = authenticated pairing: both screens show a code the user must confirm.
             addDescriptor(BluetoothGattDescriptor(
                 GBLink.CCCD,
-                BluetoothGattDescriptor.PERMISSION_READ_ENCRYPTED or BluetoothGattDescriptor.PERMISSION_WRITE_ENCRYPTED,
+                BluetoothGattDescriptor.PERMISSION_READ_ENCRYPTED_MITM or
+                    BluetoothGattDescriptor.PERMISSION_WRITE_ENCRYPTED_MITM,
             ))
         }
         val toWatch = BluetoothGattCharacteristic(
             GBLink.TO_WATCH,
             BluetoothGattCharacteristic.PROPERTY_WRITE,
-            BluetoothGattCharacteristic.PERMISSION_WRITE_ENCRYPTED,
+            BluetoothGattCharacteristic.PERMISSION_WRITE_ENCRYPTED_MITM,
         )
         service.addCharacteristic(toPhone)
         service.addCharacteristic(toWatch)
@@ -141,28 +163,60 @@ class LinkService : Service() {
         }
     }
 
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val closePairing = Runnable { setPairingWindow(false) }
+
+    fun setPairingWindow(open: Boolean) {
+        handler.removeCallbacks(closePairing)
+        pairingUntil.value = if (open) System.currentTimeMillis() + PAIRING_WINDOW_MS else 0L
+        if (open) handler.postDelayed(closePairing, PAIRING_WINDOW_MS)
+        advertise()
+    }
+
+    private fun pairingOpen() = System.currentTimeMillis() < pairingUntil.value
+
     private fun advertise() {
         val advertiser = manager.adapter?.bluetoothLeAdvertiser ?: return
+        advertiser.stopAdvertising(advertiseCallback)
         val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
+            .setAdvertiseMode(
+                if (pairingOpen()) AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+                else AdvertiseSettings.ADVERTISE_MODE_LOW_POWER)
             .setConnectable(true)
             .build()
         val data = AdvertiseData.Builder()
             .addServiceUuid(ParcelUuid(GBLink.SERVICE))
             .setIncludeDeviceName(false)
             .build()
-        advertiser.startAdvertising(settings, data, advertiseCallback)
+        val scanResponse = AdvertiseData.Builder()
+            .addServiceData(ParcelUuid(GBLink.SERVICE), GBLink.advert(pairingOpen(), shortName()))
+            .build()
+        advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
     }
 
+    /** "Galaxy Watch4 Classic (A1B2)" → "A1B2", so the iPhone can tell watches apart. */
+    private fun shortName(): String {
+        val name = manager.adapter?.name.orEmpty()
+        return Regex("\\(([^)]+)\\)").find(name)?.groupValues?.get(1) ?: name
+    }
+
+    private fun trustedAddress(): String? =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TRUSTED, null)
+
+    /**
+     * A phone is trusted only if it's bonded and is either the saved phone or pairing while the
+     * user has opened the pairing window on the watch. A new pairing replaces the old phone.
+     */
     private fun isTrusted(device: BluetoothDevice): Boolean {
         if (device.bondState != BluetoothDevice.BOND_BONDED) return false
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val trusted = prefs.getString(KEY_TRUSTED, null)
-        if (trusted == null) {
-            prefs.edit().putString(KEY_TRUSTED, device.address).apply()
-            return true
-        }
-        return trusted == device.address
+        if (trustedAddress() == device.address) return true
+        if (!pairingOpen()) return false
+        val previous = phone
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_TRUSTED, device.address).apply()
+        hasPhone.value = true
+        setPairingWindow(false)
+        if (previous != null && previous != device) server?.cancelConnection(previous)
+        return true
     }
 
     private val callback = object : BluetoothGattServerCallback() {
@@ -196,8 +250,10 @@ class LinkService : Service() {
             if (subscribed) {
                 LinkService.status.value = Status.CONNECTED
                 send(WatchMessages.hello(BuildConfig.VERSION_NAME))
+                battery.value = batteryPercent()
                 send(WatchMessages.battery(batteryPercent()))
                 flushQueue()
+                hid.connectToPhone()
             }
         }
 

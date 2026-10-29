@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Photos
 import SwiftUI
 
@@ -7,6 +8,7 @@ import SwiftUI
 final class Camera: NSObject, ObservableObject {
     @Published private(set) var ready = false
     @Published private(set) var message: String?
+    @Published private(set) var captureCount = 0
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -50,6 +52,7 @@ final class Camera: NSObject, ObservableObject {
 
     func capture() {
         guard ready else { return }
+        captureCount += 1
         output.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
     }
 
@@ -86,11 +89,19 @@ extension Camera: AVCapturePhotoCaptureDelegate {
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    /// Called for volume-button presses, including the watch acting as a Bluetooth remote.
+    var onHardwareShutter: () -> Void = {}
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        if #available(iOS 17.2, *) {
+            let action = onHardwareShutter
+            view.addInteraction(AVCaptureEventInteraction { event in
+                if event.phase == .ended { action() }
+            })
+        }
         return view
     }
 

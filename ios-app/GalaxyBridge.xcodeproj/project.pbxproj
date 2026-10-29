@@ -11,6 +11,9 @@
 		A10000000000000000000002 /* WatchLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* WatchLink.swift */; };
 		A10000000000000000000003 /* HealthSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* HealthSync.swift */; };
 		A10000000000000000000004 /* Camera.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* Camera.swift */; };
+		A10000000000000000000006 /* Dashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* Dashboard.swift */; };
+		A10000000000000000000007 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* PairingView.swift */; };
+		A10000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* Assets.xcassets */; };
 		A10000000000000000000005 /* WearLink in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000002 /* WearLink */; };
 /* End PBXBuildFile section */
 
@@ -19,6 +22,9 @@
 		A20000000000000000000002 /* WatchLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLink.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* Dashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dashboard.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000006 /* GalaxyBridge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GalaxyBridge.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000007 /* GalaxyBridge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyBridge.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -34,6 +40,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A30000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000008 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXGroup section */
 		A40000000000000000000001 = {
@@ -51,6 +68,9 @@
 				A20000000000000000000002 /* WatchLink.swift */,
 				A20000000000000000000003 /* HealthSync.swift */,
 				A20000000000000000000004 /* Camera.swift */,
+				A20000000000000000000008 /* Dashboard.swift */,
+				A20000000000000000000009 /* PairingView.swift */,
+				A2000000000000000000000A /* Assets.xcassets */,
 				A20000000000000000000005 /* Info.plist */,
 				A20000000000000000000006 /* GalaxyBridge.entitlements */,
 			);
@@ -74,6 +94,7 @@
 			buildPhases = (
 				A60000000000000000000001 /* Sources */,
 				A30000000000000000000001 /* Frameworks */,
+				A30000000000000000000002 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -127,6 +148,8 @@
 				A10000000000000000000002 /* WatchLink.swift in Sources */,
 				A10000000000000000000003 /* HealthSync.swift in Sources */,
 				A10000000000000000000004 /* Camera.swift in Sources */,
+				A10000000000000000000006 /* Dashboard.swift in Sources */,
+				A10000000000000000000007 /* PairingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,6 +246,7 @@
 		A80000000000000000000021 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = GalaxyBridge/GalaxyBridge.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -252,6 +276,7 @@
 		A80000000000000000000022 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = GalaxyBridge/GalaxyBridge.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;

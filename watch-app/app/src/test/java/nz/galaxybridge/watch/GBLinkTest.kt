@@ -46,4 +46,10 @@ class GBLinkTest {
         assertTrue(!HealthSample(SampleKind.STEPS, 5, 1, 10.0).isPlausible())
         assertTrue(!HealthSample(SampleKind.DISTANCE, 1, 2, Double.NaN).isPlausible())
     }
+
+    @Test fun advertMatchesSwiftFormat() {
+        assertArrayEquals(byteArrayOf(1, 1, 'S'.code.toByte(), '9'.code.toByte()), GBLink.advert(true, "S9"))
+        // Non-ASCII dropped, capped at 10 bytes.
+        assertEquals(12, GBLink.advert(false, "ÄBCDEFGHIJKLMN").size)
+    }
 }

@@ -209,3 +209,27 @@ public enum GBMessage: Equatable {
         UUID(uuidString: id) != nil
     }
 }
+
+/// Scan-response service data the watch app advertises under `GBLink.service`:
+///   [version = 1, flags, name (UTF-8, ≤ 10 bytes)]     flags bit0 = ready to pair
+/// Lets the iPhone list nearby watches and only offer ones the user has put in pairing mode.
+public struct GBAdvert: Equatable {
+    public var readyToPair: Bool
+    public var name: String
+
+    public static let maxNameBytes = 10
+
+    public init(readyToPair: Bool, name: String) {
+        self.readyToPair = readyToPair
+        self.name = name
+    }
+
+    public init?(_ data: Data) {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 2, bytes[0] == 1, bytes.count <= 2 + Self.maxNameBytes else { return nil }
+        readyToPair = bytes[1] & 0x01 != 0
+        // Untrusted text from the air: decode leniently and keep only printable characters.
+        name = String(decoding: bytes[2...], as: UTF8.self)
+            .filter { !$0.isNewline && $0.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } }
+    }
+}

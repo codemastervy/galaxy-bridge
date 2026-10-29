@@ -8,6 +8,7 @@ import WearLink
 @MainActor
 final class WatchLink: NSObject, ObservableObject {
     enum Status: Equatable {
+        case notPaired
         case bluetoothOff
         case unauthorized
         case searching
@@ -19,6 +20,15 @@ final class WatchLink: NSObject, ObservableObject {
     @Published private(set) var watchBattery: Int?
     @Published private(set) var watchAppVersion: String?
     @Published private(set) var lastError: String?
+    @Published private(set) var hasKnownWatch = UserDefaults.standard.string(forKey: WatchLink.knownPeripheralKey) != nil
+    @Published private(set) var isPairing = false
+    @Published private(set) var nearby: [NearbyWatch] = []
+
+    struct NearbyWatch: Identifiable, Equatable {
+        let id: UUID
+        var name: String
+        var rssi: Int
+    }
 
     var onSamples: ((String, [HealthSample]) async -> Bool)?
     var onShutter: (() -> Void)?
@@ -55,8 +65,38 @@ final class WatchLink: NSObject, ObservableObject {
     /// Forget the paired watch, e.g. before pairing a different one.
     func forgetWatch() {
         UserDefaults.standard.removeObject(forKey: Self.knownPeripheralKey)
+        hasKnownWatch = false
         if let peripheral { central.cancelPeripheralConnection(peripheral) }
+        peripheral = nil
+        status = .notPaired
     }
+
+    /// Lists nearby watches whose Galaxy Bridge app is in pairing mode. Nothing connects until
+    /// the user picks one.
+    func startPairing() {
+        isPairing = true
+        nearby = []
+        lastError = nil
+        guard central.state == .poweredOn else { return }
+        central.stopScan()
+        central.scanForPeripherals(withServices: [CBUUID(nsuuid: GBLink.service)],
+                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+    }
+
+    func stopPairing() {
+        isPairing = false
+        nearby = []
+        central.stopScan()
+        if !hasKnownWatch { status = .notPaired } else { startSearching() }
+    }
+
+    func pair(with watch: NearbyWatch) {
+        guard let p = central.retrievePeripherals(withIdentifiers: [watch.id]).first else { return }
+        pairingCandidate = watch.id
+        connect(p)
+    }
+
+    private var pairingCandidate: UUID?
 
     private func pumpWrites(_ p: CBPeripheral, _ c: CBCharacteristic) {
         guard !writeInFlight, !pendingWrites.isEmpty else { return }
@@ -64,20 +104,23 @@ final class WatchLink: NSObject, ObservableObject {
         p.writeValue(pendingWrites.removeFirst(), for: c, type: .withResponse)
     }
 
+    private var knownId: UUID? {
+        UserDefaults.standard.string(forKey: Self.knownPeripheralKey).flatMap(UUID.init(uuidString:))
+    }
+
+    /// Reconnects only to the watch the user paired; never to other Galaxy Bridge watches.
     private func startSearching() {
-        guard central.state == .poweredOn else { return }
+        guard central.state == .poweredOn, !isPairing else { return }
+        guard let id = knownId else {
+            status = .notPaired
+            return
+        }
         status = .searching
-        if let saved = UserDefaults.standard.string(forKey: Self.knownPeripheralKey),
-           let id = UUID(uuidString: saved),
-           let known = central.retrievePeripherals(withIdentifiers: [id]).first {
+        if let known = central.retrievePeripherals(withIdentifiers: [id]).first {
             connect(known)
-            return
+        } else {
+            central.scanForPeripherals(withServices: [CBUUID(nsuuid: GBLink.service)])
         }
-        if let connected = central.retrieveConnectedPeripherals(withServices: [CBUUID(nsuuid: GBLink.service)]).first {
-            connect(connected)
-            return
-        }
-        central.scanForPeripherals(withServices: [CBUUID(nsuuid: GBLink.service)])
     }
 
     private func connect(_ p: CBPeripheral) {
@@ -145,7 +188,9 @@ extension WatchLink: CBCentralManagerDelegate {
         MainActor.assumeIsolated {
             switch central.state {
             case .poweredOn:
-                if let p = peripheral, p.state == .connected {
+                if isPairing {
+                    startPairing()
+                } else if let p = peripheral, p.state == .connected {
                     p.discoverServices([CBUUID(nsuuid: GBLink.service)])
                 } else {
                     startSearching()
@@ -158,7 +203,23 @@ extension WatchLink: CBCentralManagerDelegate {
 
     nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                     advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        MainActor.assumeIsolated { connect(peripheral) }
+        let advert = (advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data])?[CBUUID(nsuuid: GBLink.service)]
+            .flatMap(GBAdvert.init)
+        let id = peripheral.identifier
+        let rssi = RSSI.intValue
+        MainActor.assumeIsolated {
+            if isPairing {
+                guard let advert, advert.readyToPair, pairingCandidate == nil else { return }
+                let name = advert.name.isEmpty ? "Galaxy Watch" : "Galaxy Watch (\(advert.name))"
+                if let i = nearby.firstIndex(where: { $0.id == id }) {
+                    nearby[i].rssi = rssi
+                } else {
+                    nearby.append(NearbyWatch(id: id, name: name, rssi: rssi))
+                }
+            } else if id == knownId {
+                connect(peripheral)
+            }
+        }
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -180,6 +241,13 @@ extension WatchLink: CBCentralManagerDelegate {
                                     error: Error?) {
         MainActor.assumeIsolated {
             reset()
+            if pairingCandidate == peripheral.identifier {
+                pairingCandidate = nil
+                lastError = "Pairing didn't finish. Make sure the watch is in pairing mode and the codes match."
+                startPairing()
+                return
+            }
+            guard peripheral.identifier == knownId else { return }
             status = .connecting
             // A pending connect has no timeout, so iOS reconnects when the watch is back in range.
             central.connect(peripheral)
@@ -221,11 +289,19 @@ extension WatchLink: CBPeripheralDelegate {
         MainActor.assumeIsolated {
             if let error {
                 lastError = "Pairing didn't complete: \(error.localizedDescription)"
+                central.cancelPeripheralConnection(peripheral)
                 return
             }
             status = .connected
             lastError = nil
+            if pairingCandidate == peripheral.identifier {
+                pairingCandidate = nil
+                isPairing = false
+                nearby = []
+                central.stopScan()
+            }
             UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: Self.knownPeripheralKey)
+            hasKnownWatch = true
             send(.hello(protocolVersion: GBLink.protocolVersion, appVersion: AppInfo.version))
         }
     }

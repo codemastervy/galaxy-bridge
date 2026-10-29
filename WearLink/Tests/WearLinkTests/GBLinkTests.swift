@@ -109,3 +109,20 @@ final class GBMessageTests: XCTestCase {
         XCTAssertThrowsError(try GBMessage.decode(Data(#"{"t":"battery","pct":101}"#.utf8)))
     }
 }
+
+final class GBAdvertTests: XCTestCase {
+    func testParsesReadyToPairAndName() {
+        XCTAssertEqual(GBAdvert(Data([1, 1]) + Data("A1B2".utf8)), GBAdvert(readyToPair: true, name: "A1B2"))
+        XCTAssertEqual(GBAdvert(Data([1, 0])), GBAdvert(readyToPair: false, name: ""))
+    }
+
+    func testRejectsUnknownVersionAndOversize() {
+        XCTAssertNil(GBAdvert(Data([2, 1])))
+        XCTAssertNil(GBAdvert(Data([1, 1]) + Data(repeating: 0x41, count: 11)))
+        XCTAssertNil(GBAdvert(Data([1])))
+    }
+
+    func testStripsControlCharacters() {
+        XCTAssertEqual(GBAdvert(Data([1, 1, 0x41, 0x0A, 0x07, 0x42]))?.name, "AB")
+    }
+}

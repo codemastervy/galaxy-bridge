@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 @main
@@ -8,7 +9,7 @@ struct GalaxyBridgeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Dashboard()
                 .environmentObject(link)
                 .environmentObject(health)
                 .environmentObject(camera)
@@ -20,96 +21,66 @@ struct GalaxyBridgeApp: App {
     }
 }
 
-struct ContentView: View {
-    @EnvironmentObject var link: WatchLink
-    @EnvironmentObject var health: HealthSync
-    @State private var showCamera = false
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Watch") {
-                    LabeledContent("Status", value: statusText)
-                    if let battery = link.watchBattery {
-                        LabeledContent("Battery", value: "\(battery)%")
-                    }
-                    if let version = link.watchAppVersion {
-                        LabeledContent("Watch app", value: version)
-                    }
-                    if let error = link.lastError {
-                        Text(error).foregroundStyle(.red)
-                    }
-                }
-
-                Section("Apple Health") {
-                    if health.authorized {
-                        LabeledContent("Samples saved", value: "\(health.savedCount)")
-                        if let last = health.lastSync {
-                            LabeledContent("Last sync") { Text(last, style: .relative) }
-                        }
-                    } else {
-                        Button("Allow writing to Apple Health") {
-                            Task { await health.requestAccess() }
-                        }
-                    }
-                    if let error = health.lastError {
-                        Text(error).foregroundStyle(.red)
-                    }
-                }
-
-                Section {
-                    Button("Open camera") { showCamera = true }
-                } footer: {
-                    Text("Press Shutter in Galaxy Bridge on the watch to take a photo.")
-                }
-            }
-            .navigationTitle("Galaxy Bridge")
-            .fullScreenCover(isPresented: $showCamera) { CameraScreen() }
-            .task { await health.requestAccess() }
-        }
-    }
-
-    private var statusText: String {
-        switch link.status {
-        case .bluetoothOff: return "Bluetooth is off"
-        case .unauthorized: return "Bluetooth access needed"
-        case .searching: return "Looking for watch"
-        case .connecting: return "Connecting"
-        case .connected: return "Connected"
-        }
-    }
-}
-
 struct CameraScreen: View {
     @EnvironmentObject var camera: Camera
     @Environment(\.dismiss) private var dismiss
+    @State private var flash = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            CameraPreview(session: camera.session).ignoresSafeArea()
-            VStack(spacing: 16) {
-                if let message = camera.message {
-                    Text(message)
-                        .padding(8)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            CameraPreview(session: camera.session, onHardwareShutter: shoot)
+                .ignoresSafeArea()
+            Color.white.opacity(flash ? 0.8 : 0).ignoresSafeArea().allowsHitTesting(false)
+
+            VStack {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .accessibilityLabel("Close camera")
+                    Spacer()
+                    Label("Watch shutter ready", systemImage: "applewatch.radiowaves.left.and.right")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
                 }
-                HStack {
-                    Button("Close") { dismiss() }
-                        .buttonStyle(.bordered)
-                    Spacer()
-                    Button { camera.capture() } label: {
-                        Circle().strokeBorder(.white, lineWidth: 4).frame(width: 72, height: 72)
-                    }
-                    .accessibilityLabel("Take photo")
-                    Spacer()
-                    Color.clear.frame(width: 60)
-                }
+                .foregroundStyle(.white)
                 .padding(.horizontal)
+
+                Spacer()
+
+                if let message = camera.message {
+                    Text(message)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .transition(.opacity)
+                }
+
+                Button(action: shoot) {
+                    ZStack {
+                        Circle().stroke(.white, lineWidth: 5).frame(width: 80, height: 80)
+                        Circle().fill(.white).frame(width: 66, height: 66)
+                    }
+                }
+                .accessibilityLabel("Take photo")
+                .padding(.vertical, 24)
             }
-            .padding(.bottom, 24)
         }
-        .background(.black)
         .task { await camera.start() }
         .onDisappear { camera.stop() }
+        .onChange(of: camera.captureCount) { _, _ in
+            withAnimation(.easeOut(duration: 0.05)) { flash = true }
+            withAnimation(.easeIn(duration: 0.25).delay(0.05)) { flash = false }
+        }
     }
+
+    private func shoot() { camera.capture() }
 }
