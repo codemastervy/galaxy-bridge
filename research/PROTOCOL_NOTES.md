@@ -113,3 +113,13 @@ Large roots are split into several pieces (`czah.g`), reassembled by digest.
 - Decode `cyoy.b` UKEY2 framing (failed to decompile; use `--show-bad-code`).
 - Find how the iOS ConnectionConfiguration (Type=BLE) is created after Stage 1.
 - What the companion must send to finish OOBE (Samsung OEM setup, command 14, etc.).
+
+## Stage 4a — encryption (mandatory: `cxxd.h()` is true when Type == BLE)
+- Watch = UKEY2 initiator (`cyoy.b`), Google securegcm library: cipher `P256_SHA512`,
+  next protocol `AES_256_CBC-HMAC_SHA256`, D2DConnectionContextV1 (saved session 73 bytes).
+- Carried in RootMessage field 17 (`dako`): 1 bytes ukey2 message · 2 bytes resume HMAC ·
+  3 bool · 4 enum mode (watch sends 2 on a fresh pairing, 1 when resuming).
+- Order: watch ClientInit → phone ServerInit → watch ClientFinish.
+- First pairing: watch shows a 16-byte verification code (base64) for the user to approve
+  (`com.google.android.clockwork.A2APairing`), 30 s timeout.
+- Not yet implemented in WearLink.
