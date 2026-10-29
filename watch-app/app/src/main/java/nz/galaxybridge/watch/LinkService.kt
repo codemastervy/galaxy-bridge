@@ -95,6 +95,10 @@ class LinkService : Service() {
         val events = MutableStateFlow<List<PhoneMessage.Event>>(emptyList())
         val findingWatch = MutableStateFlow(false)
         val findingPhone = MutableStateFlow(false)
+        /** Phone clock minus watch clock in ms, when it's off by more than a minute; else 0. */
+        val clockSkew = MutableStateFlow(0L)
+        /** The iPhone's time zone when it differs from the watch's; else empty. */
+        val zoneMismatch = MutableStateFlow("")
 
         fun performAction(uid: Int, positive: Boolean, dismissedOnly: Boolean = false) {
             val s = instance ?: return
@@ -340,7 +344,13 @@ class LinkService : Service() {
                     pending.value = queue.size()
                     flushQueue()
                 }
-                is PhoneMessage.Hello -> Unit
+                is PhoneMessage.Hello -> {
+                    val skew = if (m.phoneTime > 0) m.phoneTime - System.currentTimeMillis() else 0
+                    clockSkew.value = if (kotlin.math.abs(skew) > 60_000) skew else 0
+                    zoneMismatch.value = m.timeZone.takeIf {
+                        it.isNotEmpty() && java.util.TimeZone.getTimeZone(it).rawOffset != java.util.TimeZone.getDefault().rawOffset
+                    }.orEmpty()
+                }
                 is PhoneMessage.Find -> ring(m.on)
                 // A refused change (permission not granted) still replies, so the phone shows the real value.
                 is PhoneMessage.Set -> if (!WatchSettings.set(this@LinkService, m.key, m.value)) sendStatus()

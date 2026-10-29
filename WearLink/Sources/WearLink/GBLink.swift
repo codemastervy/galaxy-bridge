@@ -138,6 +138,8 @@ public struct WatchStatus: Codable, Equatable {
     public var totalMB: Int
     public var settings: [String: Int]
     public var perms: Permissions
+    /// Watch clock minus phone clock in seconds, measured when the status arrived.
+    public var clockOffset: TimeInterval = 0
 
     public struct Permissions: Codable, Equatable {
         public var system: Bool
@@ -247,6 +249,10 @@ public enum GBMessage: Equatable {
         var totalMB: Int?
         var settings: [String: Int]?
         var perms: WatchStatus.Permissions?
+        /// Watch clock when a samples batch was sent, in epoch ms.
+        var now: Int64?
+        var time: Int64?
+        var tz: String?
 
         init(t: String) { self.t = t }
     }
@@ -259,7 +265,11 @@ public enum GBMessage: Equatable {
     public func encoded() throws -> Data {
         var e: Envelope
         switch self {
-        case let .hello(v, app): e = Envelope(t: "hello"); e.v = v; e.app = app
+        case let .hello(v, app):
+            e = Envelope(t: "hello"); e.v = v; e.app = app
+            // Lets the watch notice if its clock or time zone is wrong.
+            e.time = Int64(Date().timeIntervalSince1970 * 1000)
+            e.tz = TimeZone.current.identifier
         case let .find(on): e = Envelope(t: "find"); e.on = on
         case let .samples(id, items): e = Envelope(t: "samples"); e.id = id; e.items = items
         case .shutter: e = Envelope(t: "shutter")
@@ -309,7 +319,7 @@ public enum GBMessage: Equatable {
             guard let id = e.id, isBatchId(id) else { throw Invalid.missingField("id") }
             guard let items = e.items else { throw Invalid.missingField("items") }
             guard items.count <= maxSamplesPerBatch else { throw Invalid.outOfRange("items") }
-            return .samples(batchId: id, items: items.filter { isPlausible($0, now: now) })
+            return .samples(batchId: id, items: corrected(items, watchNow: e.now, now: now).filter { isPlausible($0, now: now) })
         case "ack":
             guard let id = e.id, isBatchId(id) else { throw Invalid.missingField("id") }
             return .ack(batchId: id)
@@ -329,11 +339,29 @@ public enum GBMessage: Equatable {
             for (k, v) in settings {
                 if let key = WatchSetting(rawValue: k), key.range.contains(v) { known[k] = v }
             }
-            return .status(WatchStatus(model: model, os: os, app: app, pct: pct, charging: e.charging ?? false,
-                                       freeMB: max(0, e.freeMB ?? 0), totalMB: max(0, e.totalMB ?? 0),
-                                       settings: known, perms: perms))
+            var status = WatchStatus(model: model, os: os, app: app, pct: pct, charging: e.charging ?? false,
+                                     freeMB: max(0, e.freeMB ?? 0), totalMB: max(0, e.totalMB ?? 0),
+                                     settings: known, perms: perms)
+            if let t = e.time { status.clockOffset = Double(t) / 1000 - now.timeIntervalSince1970 }
+            return .status(status)
         default:
             throw Invalid.unknownType(String(e.t.prefix(32)))
+        }
+    }
+
+    static let maxUncorrectedSkew: Int64 = 2 * 60 * 1000
+
+    /// If the watch's clock is off by more than two minutes, shift its timestamps onto the
+    /// phone's clock. Batches are sent right after they're read, so transit time is negligible.
+    static func corrected(_ items: [HealthSample], watchNow: Int64?, now: Date) -> [HealthSample] {
+        guard let watchNow else { return items }
+        let skew = Int64(now.timeIntervalSince1970 * 1000) - watchNow
+        guard abs(skew) > maxUncorrectedSkew else { return items }
+        return items.map {
+            var s = $0
+            s.start += skew
+            s.end += skew
+            return s
         }
     }
 

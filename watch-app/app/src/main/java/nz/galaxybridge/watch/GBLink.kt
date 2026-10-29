@@ -94,7 +94,9 @@ data class HealthSample(val kind: SampleKind, val startMs: Long, val endMs: Long
 
 /** Messages the watch understands from the phone. Anything else is rejected. */
 sealed class PhoneMessage {
-    data class Hello(val protocolVersion: Int, val appVersion: String) : PhoneMessage()
+    /** [phoneTime] (epoch ms) and [timeZone] (IANA id) let the watch spot a wrong clock. */
+    data class Hello(val protocolVersion: Int, val appVersion: String,
+                     val phoneTime: Long = 0, val timeZone: String = "") : PhoneMessage()
     data class Ack(val batchId: String) : PhoneMessage()
     /** Ring the watch so it can be found, or stop ringing. */
     data class Find(val on: Boolean) : PhoneMessage()
@@ -120,7 +122,9 @@ sealed class PhoneMessage {
                     if (!json.has("v")) return null
                     val app = json.optString("app", "")
                     if (app.length > 32) return null
-                    Hello(json.optInt("v"), app)
+                    val tz = json.optString("tz", "")
+                    if (tz.length > 64 || !tz.all { it.isLetterOrDigit() || it in "/_+-" }) return null
+                    Hello(json.optInt("v"), app, json.optLong("time", 0), tz)
                 }
                 "ack" -> {
                     val id = json.optString("id", "")
@@ -172,7 +176,8 @@ object WatchMessages {
         JSONObject().put("t", "hello").put("v", GBLink.PROTOCOL_VERSION).put("app", appVersion).bytes()
 
     fun samples(batchId: String, items: List<HealthSample>): ByteArray =
-        JSONObject().put("t", "samples").put("id", batchId)
+        // "now" lets the phone correct for a wrong watch clock (e.g. no network time after a reboot).
+        JSONObject().put("t", "samples").put("id", batchId).put("now", System.currentTimeMillis())
             .put("items", JSONArray(items.map { it.toJson() })).bytes()
 
     fun shutter(): ByteArray = JSONObject().put("t", "shutter").bytes()

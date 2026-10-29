@@ -145,4 +145,15 @@ final class GBAdvertTests: XCTestCase {
         let ev = try JSONSerialization.jsonObject(with: GBMessage.events([CalendarItem(title: "A", start: 1, end: 2, allDay: false)]).encoded()) as! [String: Any]
         XCTAssertEqual((ev["items"] as? [[String: Any]])?.first?["title"] as? String, "A")
     }
+
+    func testCorrectsWrongWatchClock() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let batch = "8A0F5C2E-3B1D-4C8E-9F7A-1D2C3B4A5E6F"
+        // Watch thinks it's ~19 months ago; its sample was taken one minute before sending.
+        let watchNow = nowMs - 50_000_000_000
+        let json = #"{"t":"samples","id":"\#(batch)","now":\#(watchNow),"items":[{"k":"hr","start":\#(watchNow - 60_000),"end":\#(watchNow - 60_000),"v":72}]}"#
+        guard case let .samples(_, items) = try GBMessage.decode(Data(json.utf8), now: now) else { return XCTFail() }
+        XCTAssertEqual(items.first?.start, nowMs - 60_000)
+    }
 }

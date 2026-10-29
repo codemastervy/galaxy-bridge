@@ -100,6 +100,7 @@ object WatchSettings {
             .put("model", Build.MODEL.take(32))
             .put("os", "Wear OS · Android ${Build.VERSION.RELEASE}".take(32))
             .put("app", BuildConfig.VERSION_NAME)
+            .put("time", System.currentTimeMillis())
             .put("pct", battery.coerceIn(0, 100))
             .put("charging", charging)
             .put("freeMB", (stat.availableBytes / 1_000_000).toInt())

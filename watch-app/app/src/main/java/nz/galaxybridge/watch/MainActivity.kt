@@ -155,6 +155,7 @@ class MainActivity : ComponentActivity() {
     private fun ScalingLazyListScope.homePage() {
         item { StatusHeader() }
         item { PairingOrNothing() }
+        item { ClockCard() }
         item { PhoneSummary() }
         item { WeatherCard() }
         item { AgendaCard() }
@@ -179,6 +180,28 @@ class MainActivity : ComponentActivity() {
             )
             else -> Spacer(Modifier.height(0.dp))
         }
+    }
+
+    /** Apps can't set the system clock, so point the user at Date & time when it's wrong. */
+    @Composable
+    private fun ClockCard() {
+        val skew by LinkService.clockSkew.collectAsState()
+        val zone by LinkService.zoneMismatch.collectAsState()
+        if (skew == 0L && zone.isEmpty()) return
+        val minutes = kotlin.math.abs(skew) / 60_000
+        val off = when {
+            skew == 0L -> "Time zone differs from iPhone ($zone)"
+            minutes >= 60 * 24 -> "Off by ${minutes / (60 * 24)} days"
+            minutes >= 60 -> "Off by ${minutes / 60} h"
+            else -> "Off by $minutes min"
+        }
+        Chip(
+            onClick = { open(Intent(Settings.ACTION_DATE_SETTINGS)) },
+            label = { Text("Watch time is wrong") },
+            secondaryLabel = { Text("$off · Tap to fix", maxLines = 2) },
+            colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF8A3B12)),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 
     @Composable

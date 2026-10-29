@@ -41,6 +41,7 @@ struct Dashboard: View {
                     QuickActions(openCamera: { showCamera = true }, openStore: { showStore = true })
                     if link.status == .connected, link.watchStatus?.perms.ancs == false { NotificationSetupCard() }
                     if phone.findingPhone { FindingPhoneBanner() }
+                    if let off = link.watchStatus?.clockOffset, abs(off) > 60 { ClockWarningCard(offset: off) }
                     if !health.authorized { HealthAccessCard() }
                     MetricsGrid(summary: health.summary)
                     ShutterCard { showCamera = true }
@@ -140,6 +141,25 @@ private struct NotificationSetupCard: View {
                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
             }
             .buttonStyle(.bordered)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+}
+
+/// Android only lets system apps set the clock, so the fix happens on the watch itself.
+private struct ClockWarningCard: View {
+    let offset: TimeInterval
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Watch time is wrong", systemImage: "clock.badge.exclamationmark.fill")
+                .font(.headline)
+                .foregroundStyle(.orange)
+            Text("It's \(Duration.seconds(abs(offset)).formatted(.units(allowed: [.days, .hours, .minutes], width: .wide, maximumUnitCount: 2))) \(offset < 0 ? "behind" : "ahead"). On the watch, open Galaxy Bridge and tap **Watch time is wrong**, or go to Settings → General → Date and time and turn on **Automatic date and time** with Wi-Fi on. Health data is corrected automatically.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
