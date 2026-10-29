@@ -14,3 +14,9 @@ tools/
 xcuserdata/
 DerivedData/
 .DS_Store
+
+# Android build output
+watch-app/.gradle/
+watch-app/app/build/
+watch-app/build/
+watch-app/local.properties
