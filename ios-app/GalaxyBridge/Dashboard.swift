@@ -20,6 +20,7 @@ enum Theme {
 struct Dashboard: View {
     @EnvironmentObject var link: WatchLink
     @EnvironmentObject var health: HealthSync
+    @EnvironmentObject var phone: PhoneServices
     @State private var showCamera = false
     @State private var confirmForget = false
     @State private var showStore = false
@@ -37,10 +38,12 @@ struct Dashboard: View {
             ScrollView {
                 VStack(spacing: 16) {
                     WatchCard()
+                    QuickActions(openCamera: { showCamera = true }, openStore: { showStore = true })
+                    if link.status == .connected, link.watchStatus?.perms.ancs == false { NotificationSetupCard() }
+                    if phone.findingPhone { FindingPhoneBanner() }
                     if !health.authorized { HealthAccessCard() }
                     MetricsGrid(summary: health.summary)
                     ShutterCard { showCamera = true }
-                    WatchFacesCard { showStore = true }
                     SyncCard()
                     if let error = link.lastError ?? health.lastError {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -69,9 +72,93 @@ struct Dashboard: View {
             .sheet(isPresented: $showStore) {
                 SafariView(url: PlayStore.watchFaces).ignoresSafeArea()
             }
-            .task { await health.requestAccess() }
+            .toolbar {
+                NavigationLink { WatchSettingsView() } label: { Image(systemName: "gearshape.fill") }
+                    .accessibilityLabel("Watch settings")
+            }
+            .task {
+                await health.requestAccess()
+                await phone.requestPermissions()
+                phone.refresh()
+            }
         }
         .tint(Theme.accent)
+    }
+}
+
+// MARK: Quick actions
+
+private struct QuickActions: View {
+    @EnvironmentObject var link: WatchLink
+    let openCamera: () -> Void
+    let openStore: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            action(link.findingWatch ? "Stop" : "Find watch", link.findingWatch ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                   .orange, enabled: link.status == .connected) { link.findWatch(!link.findingWatch) }
+            action("Camera", "camera.fill", Theme.accent2) { openCamera() }
+            NavigationLink { WatchSettingsView() } label: { tile("Settings", "slider.horizontal.3", Theme.accent) }
+                .buttonStyle(.plain)
+            action("Faces", "paintpalette.fill", .pink) { openStore() }
+        }
+    }
+
+    private func action(_ title: String, _ symbol: String, _ color: Color, enabled: Bool = true,
+                        _ run: @escaping () -> Void) -> some View {
+        Button(action: run) { tile(title, symbol, color) }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.45)
+    }
+
+    private func tile(_ title: String, _ symbol: String, _ color: Color) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(color.gradient, in: Circle())
+            Text(title).font(.caption.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .card()
+    }
+}
+
+private struct NotificationSetupCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Turn on watch notifications", systemImage: "bell.badge.fill")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text("Open **Settings → Bluetooth**, tap ⓘ next to your watch, and switch on **Share System Notifications**. Calls and music controls use the same setting.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+}
+
+private struct FindingPhoneBanner: View {
+    @EnvironmentObject var phone: PhoneServices
+
+    var body: some View {
+        HStack {
+            Label("Your watch is ringing this iPhone", systemImage: "iphone.radiowaves.left.and.right")
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+            Button("Stop") { phone.findPhone(false) }.buttonStyle(.borderedProminent)
+        }
+        .padding(16)
+        .card()
     }
 }
 
@@ -85,7 +172,7 @@ private struct WatchCard: View {
             WatchFace(battery: link.watchBattery, connected: link.status == .connected)
                 .frame(width: 112, height: 112)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Galaxy Watch4 Classic")
+                Text(link.watchStatus.map { Self.marketingName($0.model) } ?? "Galaxy Watch")
                     .font(.headline)
                     .foregroundStyle(.white)
                 StatusPill(status: link.status)
@@ -105,6 +192,18 @@ private struct WatchCard: View {
         .padding(20)
         .background(Theme.headerGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: Theme.accent.opacity(0.35), radius: 16, y: 8)
+    }
+
+    static func marketingName(_ model: String) -> String {
+        switch model {
+        case "SM-R890", "SM-R895", "SM-R880", "SM-R885": return "Galaxy Watch4 Classic"
+        case "SM-R860", "SM-R865", "SM-R870", "SM-R875": return "Galaxy Watch4"
+        case "SM-R900", "SM-R905", "SM-R910", "SM-R915": return "Galaxy Watch5"
+        case "SM-R920", "SM-R925": return "Galaxy Watch5 Pro"
+        case "SM-R930", "SM-R935", "SM-R940", "SM-R945": return "Galaxy Watch6"
+        case "SM-R950", "SM-R955", "SM-R960", "SM-R965": return "Galaxy Watch6 Classic"
+        default: return model.isEmpty ? "Galaxy Watch" : model
+        }
     }
 
     private func batterySymbol(_ pct: Int) -> String {
@@ -180,6 +279,7 @@ private struct StatusPill: View {
         case .connecting: return "Connecting…"
         case .searching: return "Looking for watch"
         case .bluetoothOff: return "Bluetooth off"
+        case .needsRepair: return "Re-pair needed"
         case .unauthorized: return "Bluetooth not allowed"
         }
     }
@@ -188,7 +288,7 @@ private struct StatusPill: View {
         switch status {
         case .connected: return .green
         case .connecting, .searching: return .yellow
-        case .bluetoothOff, .unauthorized, .notPaired: return .red
+        case .bluetoothOff, .unauthorized, .notPaired, .needsRepair: return .red
         }
     }
 }

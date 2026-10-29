@@ -127,12 +127,100 @@ public struct HealthSample: Codable, Equatable {
     public var endDate: Date { Date(timeIntervalSince1970: Double(end) / 1000) }
 }
 
+/// Watch info and settings, as reported by the watch app (see WatchSettings.kt).
+public struct WatchStatus: Codable, Equatable {
+    public var model: String
+    public var os: String
+    public var app: String
+    public var pct: Int
+    public var charging: Bool
+    public var freeMB: Int
+    public var totalMB: Int
+    public var settings: [String: Int]
+    public var perms: Permissions
+
+    public struct Permissions: Codable, Equatable {
+        public var system: Bool
+        public var dnd: Bool
+        /// The watch is subscribed to iPhone notifications (ANCS).
+        public var ancs: Bool
+    }
+}
+
+/// Settings keys the watch accepts, with their allowed ranges. Mirrors WatchSettings.kt.
+public enum WatchSetting: String, CaseIterable {
+    case notifications = "notify"
+    case calls = "calls"
+    case clearOnIPhone = "clearSync"
+    case music = "music"
+    case syncHeart = "sync.hr"
+    case syncSteps = "sync.steps"
+    case syncEnergy = "sync.kcal"
+    case syncDistance = "sync.dist"
+    case brightness = "brightness"
+    case screenTimeout = "timeout"
+    case doNotDisturb = "dnd"
+
+    public var range: ClosedRange<Int> {
+        switch self {
+        case .brightness: return 1...255
+        case .screenTimeout: return 5...600
+        default: return 0...1
+        }
+    }
+}
+
+public struct CalendarItem: Codable, Equatable {
+    public var title: String
+    /// Milliseconds since the Unix epoch.
+    public var start: Int64
+    public var end: Int64
+    public var allDay: Bool
+
+    public init(title: String, start: Int64, end: Int64, allDay: Bool) {
+        self.title = title
+        self.start = start
+        self.end = end
+        self.allDay = allDay
+    }
+}
+
+public struct WeatherReport: Equatable {
+    public var place: String
+    public var tempC: Double
+    public var highC: Double
+    public var lowC: Double
+    /// WMO weather interpretation code.
+    public var code: Int
+    public var at: Int64
+
+    public init(place: String, tempC: Double, highC: Double, lowC: Double, code: Int, at: Int64) {
+        self.place = place
+        self.tempC = tempC
+        self.highC = highC
+        self.lowC = lowC
+        self.code = code
+        self.at = at
+    }
+}
+
 public enum GBMessage: Equatable {
+    // Both directions
     case hello(protocolVersion: Int, appVersion: String)
+    /// Watch → phone: find my phone. Phone → watch: find my watch.
+    case find(on: Bool)
+    // Watch → phone
     case samples(batchId: String, items: [HealthSample])
-    case ack(batchId: String)
     case shutter
     case battery(percent: Int)
+    case status(WatchStatus)
+    // Phone → watch
+    case ack(batchId: String)
+    case set(key: WatchSetting, value: Int)
+    case getStatus
+    case phoneBattery(percent: Int, charging: Bool)
+    case weather(WeatherReport)
+    case events([CalendarItem])
 
     private struct Envelope: Codable {
         var t: String
@@ -141,20 +229,58 @@ public enum GBMessage: Equatable {
         var id: String?
         var items: [HealthSample]?
         var pct: Int?
+        var on: Bool?
+        var key: String?
+        var value: Int?
+        var charging: Bool?
+        var place: String?
+        var temp: Double?
+        var hi: Double?
+        var lo: Double?
+        var code: Int?
+        var at: Int64?
+        var events: [CalendarItem]?
+        // status
+        var model: String?
+        var os: String?
+        var freeMB: Int?
+        var totalMB: Int?
+        var settings: [String: Int]?
+        var perms: WatchStatus.Permissions?
+
+        init(t: String) { self.t = t }
     }
 
     public static let maxSamplesPerBatch = 500
+    public static let maxEvents = 20
     static let maxClockSkew: TimeInterval = 5 * 60
     static let maxSampleAge: TimeInterval = 30 * 24 * 3600
 
     public func encoded() throws -> Data {
-        let e: Envelope
+        var e: Envelope
         switch self {
-        case let .hello(v, app): e = Envelope(t: "hello", v: v, app: app)
-        case let .samples(id, items): e = Envelope(t: "samples", id: id, items: items)
-        case let .ack(id): e = Envelope(t: "ack", id: id)
+        case let .hello(v, app): e = Envelope(t: "hello"); e.v = v; e.app = app
+        case let .find(on): e = Envelope(t: "find"); e.on = on
+        case let .samples(id, items): e = Envelope(t: "samples"); e.id = id; e.items = items
         case .shutter: e = Envelope(t: "shutter")
-        case let .battery(pct): e = Envelope(t: "battery", pct: pct)
+        case let .battery(pct): e = Envelope(t: "battery"); e.pct = pct
+        case let .status(s):
+            e = Envelope(t: "status")
+            e.model = s.model; e.os = s.os; e.app = s.app; e.pct = s.pct; e.charging = s.charging
+            e.freeMB = s.freeMB; e.totalMB = s.totalMB; e.settings = s.settings; e.perms = s.perms
+        case let .ack(id): e = Envelope(t: "ack"); e.id = id
+        case let .set(key, value): e = Envelope(t: "set"); e.key = key.rawValue; e.value = value
+        case .getStatus: e = Envelope(t: "status")
+        case let .phoneBattery(pct, charging): e = Envelope(t: "phone"); e.pct = pct; e.charging = charging
+        case let .weather(w):
+            e = Envelope(t: "weather")
+            e.place = w.place; e.temp = w.tempC; e.hi = w.highC; e.lo = w.lowC; e.code = w.code; e.at = w.at
+        case let .events(items):
+            // The watch reads the list from "items" objects; reuse that key.
+            return try JSONSerialization.data(withJSONObject: [
+                "t": "events",
+                "items": items.map { ["title": $0.title, "start": $0.start, "end": $0.end, "allDay": $0.allDay] as [String: Any] },
+            ])
         }
         return try JSONEncoder().encode(e)
     }
@@ -165,8 +291,9 @@ public enum GBMessage: Equatable {
         case outOfRange(String)
     }
 
-    /// Strict decode: unknown types, missing fields and implausible values are rejected
-    /// instead of being coerced, so nothing malformed reaches HealthKit.
+    /// Strict decode of what the watch sends. Unknown types, missing fields and bad values are
+    /// rejected. In a samples batch, implausible samples are dropped individually (and never
+    /// reach HealthKit) so the rest of the batch can still be stored and acknowledged.
     public static func decode(_ data: Data, now: Date = Date()) throws -> GBMessage {
         guard data.count <= GBLink.maxMessageBytes else { throw Invalid.outOfRange("size") }
         let e = try JSONDecoder().decode(Envelope.self, from: data)
@@ -176,21 +303,13 @@ public enum GBMessage: Equatable {
             let app = e.app ?? ""
             guard app.count <= 32 else { throw Invalid.outOfRange("app") }
             return .hello(protocolVersion: v, appVersion: app)
+        case "find":
+            return .find(on: e.on ?? false)
         case "samples":
             guard let id = e.id, isBatchId(id) else { throw Invalid.missingField("id") }
             guard let items = e.items else { throw Invalid.missingField("items") }
             guard items.count <= maxSamplesPerBatch else { throw Invalid.outOfRange("items") }
-            let latest = now.addingTimeInterval(maxClockSkew)
-            let earliest = now.addingTimeInterval(-maxSampleAge)
-            for s in items {
-                guard s.value.isFinite, s.kind.validRange.contains(s.value) else {
-                    throw Invalid.outOfRange(s.kind.rawValue)
-                }
-                guard s.end >= s.start, s.startDate >= earliest, s.endDate <= latest else {
-                    throw Invalid.outOfRange("time")
-                }
-            }
-            return .samples(batchId: id, items: items)
+            return .samples(batchId: id, items: items.filter { isPlausible($0, now: now) })
         case "ack":
             guard let id = e.id, isBatchId(id) else { throw Invalid.missingField("id") }
             return .ack(batchId: id)
@@ -200,9 +319,29 @@ public enum GBMessage: Equatable {
             guard let pct = e.pct else { throw Invalid.missingField("pct") }
             guard (0...100).contains(pct) else { throw Invalid.outOfRange("pct") }
             return .battery(percent: pct)
+        case "status":
+            guard let model = e.model, let os = e.os, let app = e.app, let pct = e.pct,
+                  let settings = e.settings, let perms = e.perms else { throw Invalid.missingField("status") }
+            guard (0...100).contains(pct), model.count <= 32, os.count <= 32, app.count <= 32,
+                  settings.count <= 32 else { throw Invalid.outOfRange("status") }
+            // Keep only known keys with in-range values.
+            var known: [String: Int] = [:]
+            for (k, v) in settings {
+                if let key = WatchSetting(rawValue: k), key.range.contains(v) { known[k] = v }
+            }
+            return .status(WatchStatus(model: model, os: os, app: app, pct: pct, charging: e.charging ?? false,
+                                       freeMB: max(0, e.freeMB ?? 0), totalMB: max(0, e.totalMB ?? 0),
+                                       settings: known, perms: perms))
         default:
             throw Invalid.unknownType(String(e.t.prefix(32)))
         }
+    }
+
+    public static func isPlausible(_ s: HealthSample, now: Date = Date()) -> Bool {
+        let latest = now.addingTimeInterval(maxClockSkew)
+        let earliest = now.addingTimeInterval(-maxSampleAge)
+        return s.value.isFinite && s.kind.validRange.contains(s.value)
+            && s.end >= s.start && s.startDate >= earliest && s.endDate <= latest
     }
 
     static func isBatchId(_ id: String) -> Bool {

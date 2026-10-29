@@ -96,6 +96,16 @@ data class HealthSample(val kind: SampleKind, val startMs: Long, val endMs: Long
 sealed class PhoneMessage {
     data class Hello(val protocolVersion: Int, val appVersion: String) : PhoneMessage()
     data class Ack(val batchId: String) : PhoneMessage()
+    /** Ring the watch so it can be found, or stop ringing. */
+    data class Find(val on: Boolean) : PhoneMessage()
+    /** Change one setting; key and value are validated against [WatchSettings]. */
+    data class Set(val key: String, val value: Int) : PhoneMessage()
+    object GetStatus : PhoneMessage()
+    data class PhoneBattery(val percent: Int, val charging: Boolean) : PhoneMessage()
+    data class Weather(val place: String, val tempC: Double, val highC: Double, val lowC: Double,
+                       val code: Int, val at: Long) : PhoneMessage()
+    data class Events(val items: List<Event>) : PhoneMessage()
+    data class Event(val title: String, val start: Long, val end: Long, val allDay: Boolean)
 
     companion object {
         fun decode(bytes: ByteArray): PhoneMessage? {
@@ -116,6 +126,37 @@ sealed class PhoneMessage {
                     val id = json.optString("id", "")
                     if (!isBatchId(id)) return null
                     Ack(id)
+                }
+                "find" -> Find(json.optBoolean("on", false))
+                "set" -> {
+                    val key = json.optString("key", "")
+                    if (!json.has("value")) return null
+                    val value = json.optInt("value", Int.MIN_VALUE)
+                    if (!WatchSettings.isValid(key, value)) return null
+                    Set(key, value)
+                }
+                "status" -> GetStatus
+                "phone" -> {
+                    val pct = json.optInt("pct", -1)
+                    if (pct !in 0..100) return null
+                    PhoneBattery(pct, json.optBoolean("charging", false))
+                }
+                "weather" -> {
+                    val t = json.optDouble("temp"); val hi = json.optDouble("hi"); val lo = json.optDouble("lo")
+                    if (listOf(t, hi, lo).any { !it.isFinite() || it !in -90.0..60.0 }) return null
+                    Weather(clean(json.optString("place", "")).take(32), t, hi, lo,
+                        json.optInt("code", 0).coerceIn(0, 99), json.optLong("at", 0))
+                }
+                "events" -> {
+                    val arr = json.optJSONArray("items") ?: return null
+                    if (arr.length() > 20) return null
+                    val items = (0 until arr.length()).map { i ->
+                        val o = arr.optJSONObject(i) ?: return null
+                        val start = o.optLong("start", -1); val end = o.optLong("end", -1)
+                        if (start < 0 || end < start) return null
+                        Event(clean(o.optString("title", "")).take(64), start, end, o.optBoolean("allDay", false))
+                    }
+                    Events(items)
                 }
                 else -> null
             }
@@ -138,6 +179,10 @@ object WatchMessages {
 
     fun battery(percent: Int): ByteArray =
         JSONObject().put("t", "battery").put("pct", percent.coerceIn(0, 100)).bytes()
+
+    fun findPhone(on: Boolean): ByteArray = JSONObject().put("t", "find").put("on", on).bytes()
+
+    fun status(info: JSONObject): ByteArray = info.put("t", "status").bytes()
 
     private fun JSONObject.bytes() = toString().toByteArray(Charsets.UTF_8)
 }

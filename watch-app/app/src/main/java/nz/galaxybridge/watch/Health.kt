@@ -56,7 +56,7 @@ object Health {
 
 class HealthListenerService : PassiveListenerService() {
     override fun onNewDataPointsReceived(dataPoints: DataPointContainer) {
-        SampleQueue(filesDir).add(Health.toSamples(dataPoints))
+        SampleQueue(filesDir).add(Health.toSamples(dataPoints).filter { WatchSettings.syncs(this, it.kind) })
         LinkService.samplesQueued()
     }
 }

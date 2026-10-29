@@ -6,6 +6,7 @@ struct GalaxyBridgeApp: App {
     @StateObject private var link = WatchLink()
     @StateObject private var health = HealthSync()
     @StateObject private var camera = Camera()
+    @StateObject private var phone = PhoneServices()
 
     var body: some Scene {
         WindowGroup {
@@ -13,9 +14,13 @@ struct GalaxyBridgeApp: App {
                 .environmentObject(link)
                 .environmentObject(health)
                 .environmentObject(camera)
+                .environmentObject(phone)
                 .task {
                     link.onSamples = { [health] id, items in await health.save(batchId: id, items) }
                     link.onShutter = { [camera] in camera.capture() }
+                    link.onFindPhone = { [phone] on in phone.findPhone(on) }
+                    link.onConnected = { [phone] in phone.refresh() }
+                    phone.send = { [link] message in link.send(message) }
                 }
         }
     }

@@ -14,6 +14,8 @@ final class WatchLink: NSObject, ObservableObject {
         case searching
         case connecting
         case connected
+        /// iOS has an old bond for this watch that doesn't meet the security requirement.
+        case needsRepair
     }
 
     @Published private(set) var status: Status = .searching
@@ -23,6 +25,9 @@ final class WatchLink: NSObject, ObservableObject {
     @Published private(set) var hasKnownWatch = UserDefaults.standard.string(forKey: WatchLink.knownPeripheralKey) != nil
     @Published private(set) var isPairing = false
     @Published private(set) var nearby: [NearbyWatch] = []
+    @Published private(set) var watchStatus: WatchStatus?
+    /// True while the watch is ringing for "Find my watch".
+    @Published private(set) var findingWatch = false
 
     struct NearbyWatch: Identifiable, Equatable {
         let id: UUID
@@ -32,6 +37,9 @@ final class WatchLink: NSObject, ObservableObject {
 
     var onSamples: ((String, [HealthSample]) async -> Bool)?
     var onShutter: (() -> Void)?
+    var onFindPhone: ((Bool) -> Void)?
+    /// Called once the link is up so the app can push phone battery, weather and calendar.
+    var onConnected: (() -> Void)?
 
     private static let restoreId = "nz.galaxybridge.watchlink"
     private static let knownPeripheralKey = "knownPeripheral"
@@ -54,7 +62,7 @@ final class WatchLink: NSObject, ObservableObject {
     func send(_ message: GBMessage) {
         guard let peripheral, let toWatch, status == .connected else { return }
         do {
-            let max = peripheral.maximumWriteValueLength(for: .withResponse)
+            let max = min(peripheral.maximumWriteValueLength(for: .withResponse), 512)
             pendingWrites += GBLink.chunks(for: try message.encoded(), maxChunk: max)
             pumpWrites(peripheral, toWatch)
         } catch {
@@ -62,12 +70,26 @@ final class WatchLink: NSObject, ObservableObject {
         }
     }
 
+    func findWatch(_ on: Bool) {
+        findingWatch = on && status == .connected
+        send(.find(on: on))
+    }
+
+    /// Changes a watch setting. The UI updates optimistically; the watch replies with its status.
+    func set(_ key: WatchSetting, _ value: Int) {
+        guard key.range.contains(value) else { return }
+        watchStatus?.settings[key.rawValue] = value
+        send(.set(key: key, value: value))
+    }
+
     /// Forget the paired watch, e.g. before pairing a different one.
     func forgetWatch() {
         UserDefaults.standard.removeObject(forKey: Self.knownPeripheralKey)
+        knownPeripheralIgnored = nil
         hasKnownWatch = false
         if let peripheral { central.cancelPeripheralConnection(peripheral) }
         peripheral = nil
+        watchStatus = nil
         status = .notPaired
     }
 
@@ -91,12 +113,15 @@ final class WatchLink: NSObject, ObservableObject {
     }
 
     func pair(with watch: NearbyWatch) {
+        knownPeripheralIgnored = nil
         guard let p = central.retrievePeripherals(withIdentifiers: [watch.id]).first else { return }
         pairingCandidate = watch.id
         connect(p)
     }
 
     private var pairingCandidate: UUID?
+    /// Set when the bond needs replacing; stops the reconnect loop until the user re-pairs.
+    private var knownPeripheralIgnored: UUID?
 
     private func pumpWrites(_ p: CBPeripheral, _ c: CBCharacteristic) {
         guard !writeInFlight, !pendingWrites.isEmpty else { return }
@@ -156,6 +181,7 @@ final class WatchLink: NSObject, ObservableObject {
                 lastError = "Watch app version doesn't match; update both apps"
             }
             send(.hello(protocolVersion: GBLink.protocolVersion, appVersion: AppInfo.version))
+            send(.getStatus)
         case let .samples(batchId, items):
             Task {
                 // Ack only after HealthKit has stored the batch, so the watch keeps it otherwise.
@@ -167,8 +193,14 @@ final class WatchLink: NSObject, ObservableObject {
             onShutter?()
         case let .battery(percent):
             watchBattery = percent
-        case .ack:
-            break
+        case let .status(s):
+            watchStatus = s
+            watchBattery = s.pct
+            watchAppVersion = s.app
+        case let .find(on):
+            onFindPhone?(on)
+        case .ack, .set, .getStatus, .phoneBattery, .weather, .events:
+            break // phone → watch only
         }
     }
 }
@@ -247,7 +279,8 @@ extension WatchLink: CBCentralManagerDelegate {
                 startPairing()
                 return
             }
-            guard peripheral.identifier == knownId else { return }
+            findingWatch = false
+            guard peripheral.identifier == knownId, knownPeripheralIgnored != peripheral.identifier else { return }
             status = .connecting
             // A pending connect has no timeout, so iOS reconnects when the watch is back in range.
             central.connect(peripheral)
@@ -288,7 +321,16 @@ extension WatchLink: CBPeripheralDelegate {
                                 error: Error?) {
         MainActor.assumeIsolated {
             if let error {
-                lastError = "Pairing didn't complete: \(error.localizedDescription)"
+                let code = (error as? CBATTError)?.code
+                if code == .insufficientAuthentication || code == .insufficientEncryption,
+                   pairingCandidate != peripheral.identifier {
+                    // An old, weaker bond: reconnecting would just loop. The user has to re-pair.
+                    status = .needsRepair
+                    lastError = "Re-pair needed: in iPhone Settings → Bluetooth, tap ⓘ next to the watch → Forget This Device. Then tap Forget this watch here and pair again."
+                    knownPeripheralIgnored = peripheral.identifier
+                } else {
+                    lastError = "Pairing didn't complete: \(error.localizedDescription)"
+                }
                 central.cancelPeripheralConnection(peripheral)
                 return
             }
@@ -303,6 +345,7 @@ extension WatchLink: CBPeripheralDelegate {
             UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: Self.knownPeripheralKey)
             hasKnownWatch = true
             send(.hello(protocolVersion: GBLink.protocolVersion, appVersion: AppInfo.version))
+            onConnected?()
         }
     }
 

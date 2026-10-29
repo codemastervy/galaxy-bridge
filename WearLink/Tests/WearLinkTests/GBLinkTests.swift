@@ -67,8 +67,12 @@ final class GBMessageTests: XCTestCase {
     func testRejectsImplausibleHeartRate() {
         let m = GBMessage.samples(batchId: batch, items: [
             HealthSample(kind: .heartRate, start: nowMs, end: nowMs, value: 900),
+            HealthSample(kind: .heartRate, start: nowMs, end: nowMs, value: 70),
         ])
-        XCTAssertThrowsError(try GBMessage.decode(m.encoded(), now: now))
+        // The bad sample is dropped; the good one survives so the batch can be acked.
+        XCTAssertEqual(try GBMessage.decode(m.encoded(), now: now), .samples(batchId: batch, items: [
+            HealthSample(kind: .heartRate, start: nowMs, end: nowMs, value: 70),
+        ]))
     }
 
     func testRejectsNonFiniteValue() throws {
@@ -81,7 +85,7 @@ final class GBMessageTests: XCTestCase {
             let m = GBMessage.samples(batchId: batch, items: [
                 HealthSample(kind: .steps, start: start, end: start, value: 1),
             ])
-            XCTAssertThrowsError(try GBMessage.decode(m.encoded(), now: now))
+            XCTAssertEqual(try GBMessage.decode(m.encoded(), now: now), .samples(batchId: batch, items: []))
         }
     }
 
@@ -89,7 +93,7 @@ final class GBMessageTests: XCTestCase {
         let m = GBMessage.samples(batchId: batch, items: [
             HealthSample(kind: .distance, start: nowMs, end: nowMs - 1, value: 5),
         ])
-        XCTAssertThrowsError(try GBMessage.decode(m.encoded(), now: now))
+        XCTAssertEqual(try GBMessage.decode(m.encoded(), now: now), .samples(batchId: batch, items: []))
     }
 
     func testRejectsBadBatchIdAndUnknownType() {
@@ -124,5 +128,21 @@ final class GBAdvertTests: XCTestCase {
 
     func testStripsControlCharacters() {
         XCTAssertEqual(GBAdvert(Data([1, 1, 0x41, 0x0A, 0x07, 0x42]))?.name, "AB")
+    }
+
+    func testStatusKeepsOnlyKnownSettings() throws {
+        let json = #"{"t":"status","model":"SM-R890","os":"Wear OS","app":"0.2.0","pct":80,"charging":false,"freeMB":5000,"totalMB":16000,"settings":{"brightness":200,"timeout":9999,"evil":1},"perms":{"system":true,"dnd":false,"ancs":true}}"#
+        guard case let .status(s) = try GBMessage.decode(Data(json.utf8)) else { return XCTFail() }
+        XCTAssertEqual(s.settings, ["brightness": 200])
+        XCTAssertTrue(s.perms.ancs)
+    }
+
+    func testFindAndSetEncode() throws {
+        let set = try JSONSerialization.jsonObject(with: GBMessage.set(key: .brightness, value: 10).encoded()) as! [String: Any]
+        XCTAssertEqual(set["key"] as? String, "brightness")
+        XCTAssertEqual(set["value"] as? Int, 10)
+        XCTAssertEqual(try GBMessage.decode(GBMessage.find(on: true).encoded()), .find(on: true))
+        let ev = try JSONSerialization.jsonObject(with: GBMessage.events([CalendarItem(title: "A", start: 1, end: 2, allDay: false)]).encoded()) as! [String: Any]
+        XCTAssertEqual((ev["items"] as? [[String: Any]])?.first?["title"] as? String, "A")
     }
 }

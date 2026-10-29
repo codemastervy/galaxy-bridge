@@ -50,15 +50,23 @@ final class HealthSync: ObservableObject {
         }
     }
 
-    /// Returns true only when every sample in the batch was stored.
+    /// Returns true once the batch is settled: every sample is stored, or belongs to a type the
+    /// user chose not to share. Returns false (so the watch keeps it) if Health hasn't been set up.
     func save(batchId: String, _ items: [HealthSample]) async -> Bool {
         let device = HKDevice(name: "Galaxy Watch", manufacturer: "Samsung", model: nil,
                               hardwareVersion: nil, firmwareVersion: nil, softwareVersion: nil,
                               localIdentifier: nil, udiDeviceIdentifier: nil)
-        let samples = items.compactMap { item -> HKQuantitySample? in
+        var samples: [HKQuantitySample] = []
+        for item in items {
             let type = Self.type(for: item.kind)
-            guard store.authorizationStatus(for: type) == .sharingAuthorized else { return nil }
-            return HKQuantitySample(
+            switch store.authorizationStatus(for: type) {
+            case .sharingAuthorized: break
+            case .sharingDenied: continue // The user's choice; drop rather than retry forever.
+            default:
+                lastError = "Allow Galaxy Bridge to write to Apple Health"
+                return false
+            }
+            samples.append(HKQuantitySample(
                 type: type,
                 quantity: HKQuantity(unit: Self.unit(for: item.kind), doubleValue: item.value),
                 start: item.startDate,
@@ -67,11 +75,7 @@ final class HealthSync: ObservableObject {
                 metadata: [
                     HKMetadataKeySyncIdentifier: "gb-\(item.kind.rawValue)-\(item.start)-\(item.end)",
                     HKMetadataKeySyncVersion: 1,
-                ])
-        }
-        guard samples.count == items.count else {
-            lastError = "Allow Galaxy Bridge to write to Apple Health in Settings → Health"
-            return false
+                ]))
         }
         if samples.isEmpty { return true }
         do {

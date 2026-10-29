@@ -23,7 +23,18 @@ import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.IBinder
 import android.os.ParcelUuid
+import android.media.AudioAttributes
+import android.media.Ringtone
+import android.media.RingtoneManager
+import android.os.VibrationEffect
+import android.os.VibratorManager
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -63,6 +74,7 @@ class LinkService : Service() {
         val pairingUntil = MutableStateFlow(0L)
         val hasPhone = MutableStateFlow(false)
         private const val PAIRING_WINDOW_MS = 120_000L
+        private const val FIND_ID = 4
 
         fun openPairing() = instance?.setPairingWindow(true)
         fun cancelPairing() = instance?.setPairingWindow(false)
@@ -72,10 +84,35 @@ class LinkService : Service() {
         fun forgetPhone(context: Context) {
             context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_TRUSTED).apply()
             hasPhone.value = false
-            instance?.disconnectAll()
+            instance?.apply { apple.close(); notifier.clearAll(); disconnectAll() }
         }
 
         fun statusFlow(): StateFlow<Status> = status
+
+        /** iPhone-side info the watch shows. */
+        val phoneBattery = MutableStateFlow<PhoneMessage.PhoneBattery?>(null)
+        val weather = MutableStateFlow<PhoneMessage.Weather?>(null)
+        val events = MutableStateFlow<List<PhoneMessage.Event>>(emptyList())
+        val findingWatch = MutableStateFlow(false)
+        val findingPhone = MutableStateFlow(false)
+
+        fun performAction(uid: Int, positive: Boolean, dismissedOnly: Boolean = false) {
+            val s = instance ?: return
+            if (dismissedOnly && !WatchSettings.enabled(s, WatchSettings.CLEAR_ON_IPHONE)) return
+            s.apple.perform(uid, positive)
+            if (!dismissedOnly) s.notifier.remove(uid)
+        }
+
+        fun media(command: Int) = instance?.apple?.media(command)
+
+        fun findPhone(on: Boolean) {
+            val s = instance ?: return
+            findingPhone.value = on && status.value == Status.CONNECTED
+            s.send(WatchMessages.findPhone(on))
+        }
+
+        fun stopFindingWatch() = instance?.ring(false)
+
     }
 
     private lateinit var manager: BluetoothManager
@@ -83,6 +120,10 @@ class LinkService : Service() {
     private lateinit var toPhone: BluetoothGattCharacteristic
     private lateinit var queue: SampleQueue
     lateinit var hid: HidShutter
+    lateinit var apple: AppleClient
+    lateinit var notifier: PhoneNotifier
+    private lateinit var media: MediaBridge
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var phone: BluetoothDevice? = null
     private var subscribed = false
@@ -107,12 +148,23 @@ class LinkService : Service() {
         advertise()
         hid = HidShutter(this) { getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TRUSTED, null) }
         hid.start()
+        notifier = PhoneNotifier(this)
+        apple = AppleClient(this, onNotification = notifier::post, onRemoved = notifier::remove)
+        media = MediaBridge(this) { apple.media(it) }
+        AppleClient.nowPlaying.onEach { media.update(it) }.launchIn(scope)
+        WatchSettings.changes.onEach { media.update(AppleClient.nowPlaying.value); sendStatus() }.launchIn(scope)
+        AppleClient.connected.onEach { sendStatus() }.launchIn(scope)
+        trustedDevice()?.let { apple.connect(it) }
         status.value = Status.WAITING
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        scope.cancel()
+        ring(false)
+        apple.close()
+        media.release()
         hid.stop()
         manager.adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
         server?.close()
@@ -200,6 +252,9 @@ class LinkService : Service() {
         return Regex("\\(([^)]+)\\)").find(name)?.groupValues?.get(1) ?: name
     }
 
+    private fun trustedDevice(): BluetoothDevice? =
+        trustedAddress()?.let { a -> runCatching { manager.adapter.getRemoteDevice(a) }.getOrNull() }
+
     private fun trustedAddress(): String? =
         getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TRUSTED, null)
 
@@ -227,6 +282,8 @@ class LinkService : Service() {
                 outbox.clear()
                 notifyInFlight = false
                 inFlightBatches.clear()
+                mtu = 23
+                findingPhone.value = false
                 LinkService.status.value = Status.WAITING
             }
         }
@@ -253,7 +310,9 @@ class LinkService : Service() {
                 battery.value = batteryPercent()
                 send(WatchMessages.battery(batteryPercent()))
                 flushQueue()
+                sendStatus()
                 hid.connectToPhone()
+                apple.connect(device)
             }
         }
 
@@ -281,6 +340,13 @@ class LinkService : Service() {
                     flushQueue()
                 }
                 is PhoneMessage.Hello -> Unit
+                is PhoneMessage.Find -> ring(m.on)
+                // A refused change (permission not granted) still replies, so the phone shows the real value.
+                is PhoneMessage.Set -> if (!WatchSettings.set(this@LinkService, m.key, m.value)) sendStatus()
+                PhoneMessage.GetStatus -> sendStatus()
+                is PhoneMessage.PhoneBattery -> phoneBattery.value = m
+                is PhoneMessage.Weather -> weather.value = m
+                is PhoneMessage.Events -> events.value = m.items
                 null -> Log.w(TAG, "rejected message from phone")
             }
         }
@@ -293,19 +359,66 @@ class LinkService : Service() {
 
     fun send(message: ByteArray) {
         if (phone == null || !subscribed) return
-        outbox.addAll(GBLink.chunks(message, mtu - 3))
+        // ATT caps an attribute value at 512 bytes even when the MTU is 517.
+        outbox.addAll(GBLink.chunks(message, minOf(mtu - 3, 512)))
         pump()
     }
+
+    fun sendStatus() {
+        val bm = getSystemService(BatteryManager::class.java)
+        send(WatchMessages.status(WatchSettings.status(this, batteryPercent(), bm.isCharging)))
+    }
+
+    private var ringtone: Ringtone? = null
+
+    /** "Find my watch": rings and vibrates until stopped here or on the iPhone. */
+    fun ring(on: Boolean) {
+        findingWatch.value = on
+        val vibrator = getSystemService(VibratorManager::class.java).defaultVibrator
+        ringtone?.stop()
+        ringtone = null
+        vibrator.cancel()
+        handler.removeCallbacks(stopRinging)
+        if (!on) {
+            getSystemService(NotificationManager::class.java).cancel(FIND_ID)
+            return
+        }
+        vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 600, 400), 0))
+        ringtone = RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))?.apply {
+            audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build()
+            isLooping = true
+            play()
+        }
+        handler.postDelayed(stopRinging, 60_000)
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("find", "Find my watch", NotificationManager.IMPORTANCE_HIGH))
+        val screen = android.app.PendingIntent.getActivity(this, 1,
+            Intent(this, AlertActivity::class.java).putExtra(AlertActivity.EXTRA_MODE, AlertActivity.MODE_FIND),
+            android.app.PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(FIND_ID, Notification.Builder(this, "find")
+            .setSmallIcon(R.drawable.ic_stat_iphone)
+            .setContentTitle("Find my watch")
+            .setContentText("Tap to stop")
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setFullScreenIntent(screen, true)
+            .setContentIntent(screen)
+            .build())
+    }
+
+    private val stopRinging = Runnable { ring(false) }
 
     private fun pump() {
         val device = phone ?: return
         if (notifyInFlight) return
         val next = outbox.removeFirstOrNull() ?: return
         notifyInFlight = true
-        val result = server?.notifyCharacteristicChanged(device, toPhone, false, next)
+        val result = runCatching { server?.notifyCharacteristicChanged(device, toPhone, false, next) }
+            .onFailure { Log.w(TAG, "notify failed", it) }.getOrNull()
         if (result != BluetoothGatt.GATT_SUCCESS) {
+            // Stack busy: retry shortly instead of stalling until the next reconnect.
             notifyInFlight = false
             outbox.addFirst(next)
+            handler.postDelayed({ pump() }, 50)
         }
     }
 
@@ -318,6 +431,8 @@ class LinkService : Service() {
             if (id in inFlightBatches) continue
             inFlightBatches += id
             send(WatchMessages.samples(id, items))
+            // If the phone never acks (e.g. it dropped the message), make the batch eligible again.
+            handler.postDelayed({ if (inFlightBatches.remove(id)) flushQueue() }, 30_000)
         }
     }
 
