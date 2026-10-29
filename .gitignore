@@ -1,0 +1,16 @@
+# Proprietary Samsung/Google binaries and decompiled code: never publish
+research/apks/
+research/unz/
+research/src/
+research/*_strings.txt
+# Personal device data (Bluetooth addresses, settings)
+research/bt_dumpsys.txt
+research/snapshot-before-reset/
+# Local toolchains
+tools/
+# Build output
+.build/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.DS_Store
