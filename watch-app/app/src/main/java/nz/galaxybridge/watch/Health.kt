@@ -39,18 +39,17 @@ object Health {
             val t = (p as SampleDataPoint<Double>).getTimeInstant(boot).toEpochMilli()
             out += HealthSample(SampleKind.HEART_RATE, t, t, p.value)
         }
-        fun interval(type: DataType<*, *>, kind: SampleKind, toDouble: (Any) -> Double) {
-            @Suppress("UNCHECKED_CAST")
-            for (p in data.getData(type as DataType<Any, IntervalDataPoint<Any>>)) {
+        fun <T : Any> interval(points: List<IntervalDataPoint<T>>, kind: SampleKind, toDouble: (T) -> Double) {
+            for (p in points) {
                 out += HealthSample(kind,
                     p.getStartInstant(boot).toEpochMilli(),
                     p.getEndInstant(boot).toEpochMilli(),
                     toDouble(p.value))
             }
         }
-        interval(DataType.STEPS, SampleKind.STEPS) { (it as Long).toDouble() }
-        interval(DataType.CALORIES, SampleKind.ACTIVE_ENERGY) { it as Double }
-        interval(DataType.DISTANCE, SampleKind.DISTANCE) { it as Double }
+        interval(data.getData(DataType.STEPS), SampleKind.STEPS) { it.toDouble() }
+        interval(data.getData(DataType.CALORIES), SampleKind.ACTIVE_ENERGY) { it }
+        interval(data.getData(DataType.DISTANCE), SampleKind.DISTANCE) { it }
         return out.filter { it.isPlausible() }
     }
 }
