@@ -64,6 +64,45 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".PhoneBatteryComplication"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_iphone"
+            android:label="iPhone battery"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data android:name="android.support.wearable.complications.SUPPORTED_TYPES" android:value="RANGED_VALUE,SHORT_TEXT" />
+            <meta-data android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS" android:value="0" />
+        </service>
+
+        <service
+            android:name=".WeatherComplication"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_iphone"
+            android:label="iPhone weather"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data android:name="android.support.wearable.complications.SUPPORTED_TYPES" android:value="SHORT_TEXT,LONG_TEXT" />
+            <meta-data android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS" android:value="0" />
+        </service>
+
+        <service
+            android:name=".NextEventComplication"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_iphone"
+            android:label="Next event (iPhone)"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data android:name="android.support.wearable.complications.SUPPORTED_TYPES" android:value="LONG_TEXT,SHORT_TEXT" />
+            <meta-data android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS" android:value="300" />
+        </service>
+
         <receiver
             android:name=".BootReceiver"
             android:exported="false">

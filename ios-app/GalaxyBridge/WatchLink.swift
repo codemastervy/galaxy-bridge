@@ -1,6 +1,7 @@
 import CoreBluetooth
 import Foundation
 import os
+import UserNotifications
 import WearLink
 
 /// Connects to the Galaxy Bridge watch app over GBLink and keeps the connection alive,
@@ -129,6 +130,20 @@ final class WatchLink: NSObject, ObservableObject {
         p.writeValue(pendingWrites.removeFirst(), for: c, type: .withResponse)
     }
 
+    private var warnedLowBattery = false
+
+    /// Posts one local notification when the watch drops to 15%, like a native companion app.
+    private func updateBattery(_ pct: Int) {
+        watchBattery = pct
+        if pct > 20 { warnedLowBattery = false }
+        guard pct <= 15, !warnedLowBattery, watchStatus?.charging != true else { return }
+        warnedLowBattery = true
+        let content = UNMutableNotificationContent()
+        content.title = "Watch battery low"
+        content.body = "Your Galaxy Watch is at \(pct)%."
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "watchBattery", content: content, trigger: nil))
+    }
+
     private var knownId: UUID? {
         UserDefaults.standard.string(forKey: Self.knownPeripheralKey).flatMap(UUID.init(uuidString:))
     }
@@ -192,10 +207,10 @@ final class WatchLink: NSObject, ObservableObject {
         case .shutter:
             onShutter?()
         case let .battery(percent):
-            watchBattery = percent
+            updateBattery(percent)
         case let .status(s):
             watchStatus = s
-            watchBattery = s.pct
+            updateBattery(s.pct)
             watchAppVersion = s.app
         case let .find(on):
             onFindPhone?(on)

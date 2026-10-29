@@ -141,6 +141,7 @@ class LinkService : Service() {
         instance = this
         queue = SampleQueue(filesDir)
         pending.value = queue.size()
+        PhoneInfo.load(this)
         startInForeground()
         manager = getSystemService(BluetoothManager::class.java)
         hasPhone.value = trustedAddress() != null
@@ -344,9 +345,9 @@ class LinkService : Service() {
                 // A refused change (permission not granted) still replies, so the phone shows the real value.
                 is PhoneMessage.Set -> if (!WatchSettings.set(this@LinkService, m.key, m.value)) sendStatus()
                 PhoneMessage.GetStatus -> sendStatus()
-                is PhoneMessage.PhoneBattery -> phoneBattery.value = m
-                is PhoneMessage.Weather -> weather.value = m
-                is PhoneMessage.Events -> events.value = m.items
+                is PhoneMessage.PhoneBattery -> { phoneBattery.value = m; PhoneInfo.save(this@LinkService, m) }
+                is PhoneMessage.Weather -> { weather.value = m; PhoneInfo.save(this@LinkService, m) }
+                is PhoneMessage.Events -> { events.value = m.items; PhoneInfo.save(this@LinkService, m) }
                 null -> Log.w(TAG, "rejected message from phone")
             }
         }
