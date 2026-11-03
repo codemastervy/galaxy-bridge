@@ -43,7 +43,8 @@ Tested on a Galaxy Watch4 Classic (SM-R890, Wear OS 5 / One UI Watch 6) with an 
 
 - **The watch must already be set up** (with an Android phone, once). Pairing a freshly reset watch
   straight to an iPhone needs the Wear OS companion encryption layer, which isn't implemented yet;
-  see [HANDOFF.md](HANDOFF.md) and [research/PROTOCOL_NOTES.md](research/PROTOCOL_NOTES.md).
+  see [docs/NATIVE_PAIRING.md](docs/NATIVE_PAIRING.md) (status and the `wearlink-pair` Mac tester),
+  [HANDOFF.md](HANDOFF.md) and [research/PROTOCOL_NOTES.md](research/PROTOCOL_NOTES.md).
 - Not possible for third-party apps on these platforms: replying to messages from the watch, call
   audio on the watch, choosing watch faces from the iPhone, and setting the watch's system clock.
 - SpO2 and ECG need Samsung's Health Sensor SDK (not included).

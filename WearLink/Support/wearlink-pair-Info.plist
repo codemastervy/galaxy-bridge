@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>nz.galaxybridge.wearlink-pair</string>
+	<key>CFBundleName</key>
+	<string>wearlink-pair</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>wearlink-pair talks to your Wear OS watch over Bluetooth to test pairing.</string>
+</dict>
+</plist>

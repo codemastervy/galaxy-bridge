@@ -19,6 +19,13 @@ What the watch expects (details in PROTOCOL_NOTES Stage 4a):
 - On first pairing the watch shows a verification code (16 bytes, base64, no padding)
   for the user to approve within 30 seconds; the app should show the same code.
 
+## Where it plugs in
+
+`ClockworkSession` (WearLink) already runs Stages 3–4 and hands the watch's handshake messages to a
+`LinkEncryption`. Pass your implementation to `ClockworkSession(log:encryption:userConfirmed:)` in
+`Sources/wearlink-pair/main.swift` (and later the iPhone app); today it's `nil`, so the session stops
+at Stage 4a. Test with `wearlink-pair serve`. See docs/NATIVE_PAIRING.md.
+
 ## Suggested approach
 
 1. Build the library's C++ implementation (`src/main/cpp`) for iOS as a static library or
