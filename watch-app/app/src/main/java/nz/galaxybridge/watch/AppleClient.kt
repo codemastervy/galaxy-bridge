@@ -123,7 +123,7 @@ class AppleClient(
                 // Data Source must be subscribed before Notification Source.
                 ancs.getCharacteristic(Ancs.DATA_SOURCE)?.let { subscribe(it) }
                 ancs.getCharacteristic(Ancs.NOTIFICATION_SOURCE)?.let { subscribe(it) }
-                connected.value = controlPoint != null
+                // "connected" is set once iOS accepts the Notification Source subscription.
             }
             if (ams != null) {
                 remoteCommand = ams.getCharacteristic(Ams.REMOTE_COMMAND)
@@ -139,6 +139,10 @@ class AppleClient(
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) = main.post {
             if (status != BluetoothGatt.GATT_SUCCESS) Log.w(TAG, "subscribe ${d.characteristic.uuid} failed: $status")
+            // iOS refuses (status 3) when "Share System Notifications" is off for this watch.
+            if (d.characteristic.uuid == Ancs.NOTIFICATION_SOURCE) {
+                connected.value = status == BluetoothGatt.GATT_SUCCESS && controlPoint != null
+            }
             opDone()
         }.let { }
 
