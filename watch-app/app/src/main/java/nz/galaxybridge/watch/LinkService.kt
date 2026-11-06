@@ -17,7 +17,9 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.BatteryManager
@@ -186,6 +188,7 @@ class LinkService : Service() {
         WatchSettings.changes.onEach { media.update(AppleClient.nowPlaying.value); sendStatus() }.launchIn(scope)
         AppleClient.connected.onEach { sendStatus() }.launchIn(scope)
         trustedDevice()?.let { apple.connect(it) }
+        registerReceiver(bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
         status.value = Status.WAITING
     }
 
@@ -193,6 +196,7 @@ class LinkService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        runCatching { unregisterReceiver(bondReceiver) }
         ring(false)
         apple.close()
         media.release()
@@ -294,15 +298,48 @@ class LinkService : Service() {
      * user has opened the pairing window on the watch. A new pairing replaces the old phone.
      */
     private fun isTrusted(device: BluetoothDevice): Boolean {
-        if (device.bondState != BluetoothDevice.BOND_BONDED) return false
+        val bond = device.bondState
+        // iOS subscribes over the freshly encrypted link a moment before Android finishes the
+        // key exchange. Refusing here made iOS hang up and abort the pairing, so while the user
+        // has the pairing window open, accept the bonding phone and save it once it's bonded.
+        if (bond == BluetoothDevice.BOND_BONDING && pairingOpen()) {
+            bondingPhone = device
+            return true
+        }
+        if (bond != BluetoothDevice.BOND_BONDED) return false
         if (trustedAddress() == device.address) return true
-        if (!pairingOpen()) return false
+        if (!pairingOpen() && bondingPhone != device) return false
+        bondingPhone = null
         val previous = phone
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_TRUSTED, device.address).apply()
         hasPhone.value = true
         setPairingWindow(false)
         if (previous != null && previous != device) server?.cancelConnection(previous)
         return true
+    }
+
+    /** A phone that subscribed while its pairing was still finishing. */
+    private var bondingPhone: BluetoothDevice? = null
+
+    private val bondReceiver = object : BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
+        override fun onReceive(context: Context, intent: Intent) {
+            @Suppress("DEPRECATION")
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+            if (device != bondingPhone) return
+            when (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)) {
+                BluetoothDevice.BOND_BONDED -> {
+                    Log.i(TAG, "pairing finished")
+                    isTrusted(device)
+                    if (phone == device && subscribed) { hid.connectToPhone(); apple.connect(device) }
+                }
+                BluetoothDevice.BOND_NONE -> {
+                    Log.w(TAG, "pairing failed")
+                    bondingPhone = null
+                    if (phone == device) server?.cancelConnection(device)
+                }
+            }
+        }
     }
 
     private val callback = object : BluetoothGattServerCallback() {
@@ -342,8 +379,10 @@ class LinkService : Service() {
                 send(WatchMessages.battery(batteryPercent()))
                 flushQueue()
                 sendStatus()
-                hid.connectToPhone()
-                apple.connect(device)
+                if (device.bondState == BluetoothDevice.BOND_BONDED) {
+                    hid.connectToPhone()
+                    apple.connect(device)
+                }
             }
         }
 

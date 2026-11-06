@@ -37,6 +37,7 @@ final class WatchLink: NSObject, ObservableObject {
         didSet { UserDefaults.standard.set(alertOnDisconnect, forKey: "alertOnDisconnect") }
     }
     private var rssiTimer: Timer?
+    private var subscribeRetries = 0
 
     struct NearbyWatch: Identifiable, Equatable {
         let id: UUID
@@ -208,6 +209,7 @@ final class WatchLink: NSObject, ObservableObject {
     private func reset() {
         toPhone = nil
         toWatch = nil
+        subscribeRetries = 0
         assembler = GBLinkAssembler()
         pendingWrites.removeAll()
         writeInFlight = false
@@ -378,12 +380,22 @@ extension WatchLink: CBPeripheralDelegate {
                     status = .needsRepair
                     lastError = "Re-pair needed: in iPhone Settings → Bluetooth, tap ⓘ next to the watch → Forget This Device. Then tap Forget this watch here and pair again."
                     knownPeripheralIgnored = peripheral.identifier
+                } else if pairingCandidate == peripheral.identifier, subscribeRetries < 5 {
+                    // The watch can still be finishing the key exchange. Hanging up now would abort
+                    // the pairing, so give it a moment and ask again on the same connection.
+                    subscribeRetries += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                        guard let self, self.peripheral == peripheral, peripheral.state == .connected else { return }
+                        peripheral.setNotifyValue(true, for: characteristic)
+                    }
+                    return
                 } else {
                     lastError = "Pairing didn't complete: \(error.localizedDescription)"
                 }
                 central.cancelPeripheralConnection(peripheral)
                 return
             }
+            subscribeRetries = 0
             status = .connected
             noteConnection(true)
             lastError = nil
