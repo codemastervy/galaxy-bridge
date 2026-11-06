@@ -12,7 +12,7 @@ import android.media.session.PlaybackState
 
 /**
  * Mirrors what the iPhone is playing into a local MediaSession, so the watch's own media
- * controls (and the Galaxy Bridge music screen) show it and send commands back over AMS.
+ * controls (and the Wear OS Bridge music screen) show it and send commands back over AMS.
  */
 class MediaBridge(private val context: Context, private val command: (Int) -> Unit) {
     companion object {

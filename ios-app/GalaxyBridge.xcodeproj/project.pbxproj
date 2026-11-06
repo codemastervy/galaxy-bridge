@@ -19,6 +19,7 @@
 		A10000000000000000000005 /* WearLink in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000002 /* WearLink */; };
 		A1000000000000000000F000 /* Features.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F000 /* Features.swift */; };
 		A1000000000000000000F001 /* StoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* StoreView.swift */; };
+		A1000000000000000000F002 /* Design.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* Design.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 		A20000000000000000000007 /* GalaxyBridge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyBridge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000000000000000000F000 /* Features.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features.swift; sourceTree = "<group>"; };
 		A2000000000000000000F001 /* StoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreView.swift; sourceTree = "<group>"; };
+		A2000000000000000000F002 /* Design.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Design.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +78,7 @@
 				A20000000000000000000002 /* WatchLink.swift */,
 				A20000000000000000000003 /* HealthSync.swift */,
 				A20000000000000000000004 /* Camera.swift */,
+				A2000000000000000000F002 /* Design.swift */,
 				A2000000000000000000F001 /* StoreView.swift */,
 				A2000000000000000000F000 /* Features.swift */,
 				A20000000000000000000008 /* Dashboard.swift */,
@@ -160,6 +163,7 @@
 				A10000000000000000000002 /* WatchLink.swift in Sources */,
 				A10000000000000000000003 /* HealthSync.swift in Sources */,
 				A10000000000000000000004 /* Camera.swift in Sources */,
+				A1000000000000000000F002 /* Design.swift in Sources */,
 				A1000000000000000000F001 /* StoreView.swift in Sources */,
 				A1000000000000000000F000 /* Features.swift in Sources */,
 				A10000000000000000000006 /* Dashboard.swift in Sources */,
@@ -269,8 +273,8 @@
 				DEVELOPMENT_TEAM = 92NBPCUC3M;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GalaxyBridge/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Galaxy Bridge";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Galaxy Bridge connects to your Galaxy Watch over Bluetooth.";
+				INFOPLIST_KEY_CFBundleDisplayName = "Wear OS Bridge";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Wear OS Bridge connects to your Galaxy Watch over Bluetooth.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Your upcoming events are shown on your watch.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Your approximate location is used to show the local weather on your watch.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Your contacts are copied to your watch so you can call them from it.";
@@ -278,8 +282,8 @@
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera lets your watch act as a remote shutter.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Galaxy Bridge only writes data to Apple Health; it does not read it.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Galaxy Bridge saves heart rate, steps, energy, distance, floors and workouts from your Galaxy Watch to Apple Health.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wear OS Bridge only writes data to Apple Health; it does not read it.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wear OS Bridge saves heart rate, steps, energy, distance, floors and workouts from your Galaxy Watch to Apple Health.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Photos you take with the watch shutter are saved to your library.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -305,8 +309,8 @@
 				DEVELOPMENT_TEAM = 92NBPCUC3M;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GalaxyBridge/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Galaxy Bridge";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Galaxy Bridge connects to your Galaxy Watch over Bluetooth.";
+				INFOPLIST_KEY_CFBundleDisplayName = "Wear OS Bridge";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Wear OS Bridge connects to your Galaxy Watch over Bluetooth.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Your upcoming events are shown on your watch.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Your approximate location is used to show the local weather on your watch.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Your contacts are copied to your watch so you can call them from it.";
@@ -314,8 +318,8 @@
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera lets your watch act as a remote shutter.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Galaxy Bridge only writes data to Apple Health; it does not read it.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Galaxy Bridge saves heart rate, steps, energy, distance, floors and workouts from your Galaxy Watch to Apple Health.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wear OS Bridge only writes data to Apple Health; it does not read it.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wear OS Bridge saves heart rate, steps, energy, distance, floors and workouts from your Galaxy Watch to Apple Health.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Photos you take with the watch shutter are saved to your library.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (

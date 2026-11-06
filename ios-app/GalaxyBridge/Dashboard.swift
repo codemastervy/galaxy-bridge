@@ -1,156 +1,271 @@
 import SafariServices
 import SwiftUI
+import WearLink
 
-// MARK: Theme
-
-enum Theme {
-    static let accent = Color(red: 0.36, green: 0.42, blue: 1.0)
-    static let accent2 = Color(red: 0.18, green: 0.82, blue: 0.86)
-    static let heart = Color(red: 1.0, green: 0.27, blue: 0.38)
-    static let steps = Color(red: 0.25, green: 0.85, blue: 0.48)
-    static let distance = Color(red: 0.31, green: 0.67, blue: 1.0)
-    static let energy = Color(red: 1.0, green: 0.62, blue: 0.2)
-
-    static let headerGradient = LinearGradient(
-        colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
-}
-
-// MARK: Dashboard
+// MARK: Root
 
 struct Dashboard: View {
     @EnvironmentObject var link: WatchLink
     @EnvironmentObject var health: HealthSync
     @EnvironmentObject var phone: PhoneServices
+
+    var body: some View {
+        Group {
+            if link.hasKnownWatch { MainTabs() } else { PairingView() }
+        }
+        .preferredColorScheme(.dark)
+        .tint(Theme.accent2)
+    }
+}
+
+private struct MainTabs: View {
+    @EnvironmentObject var health: HealthSync
+    @EnvironmentObject var phone: PhoneServices
+    @State private var tab = 0
+
+    var body: some View {
+        TabView(selection: $tab) {
+            NavigationStack { HomeView(tab: $tab) }.tabItem { Label("Watch", systemImage: "applewatch.side.right") }.tag(0)
+            NavigationStack { HealthView() }.tabItem { Label("Health", systemImage: "heart.fill") }.tag(1)
+            NavigationStack { StoreScreen() }.tabItem { Label("Store", systemImage: "bag.fill") }.tag(2)
+            NavigationStack { MoreView() }.tabItem { Label("More", systemImage: "square.grid.2x2.fill") }.tag(3)
+            NavigationStack { WatchSettingsView() }.tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(4)
+        }
+        .task {
+            await health.requestAccess()
+            await phone.requestPermissions()
+            phone.refresh()
+        }
+    }
+}
+
+// MARK: Home
+
+private struct HomeView: View {
+    @EnvironmentObject var link: WatchLink
+    @EnvironmentObject var health: HealthSync
+    @EnvironmentObject var phone: PhoneServices
+    @EnvironmentObject var hub: FeatureHub
+    @Binding var tab: Int
     @State private var showCamera = false
     @State private var confirmForget = false
-    @State private var showStore = false
+
+    private var connected: Bool { link.status == .connected }
 
     var body: some View {
-        if link.hasKnownWatch {
-            home
-        } else {
-            PairingView()
-        }
-    }
+        ScrollView {
+            VStack(spacing: 18) {
+                HStack { Wordmark(); Spacer() }
+                    .padding(.top, 4)
 
-    private var home: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    WatchCard()
-                    QuickActions(openCamera: { showCamera = true }, openStore: { showStore = true })
-                    MoreCard()
-                    if link.status == .connected, link.watchStatus?.perms.ancs == false { NotificationSetupCard() }
-                    if phone.findingPhone { FindingPhoneBanner() }
-                    if let off = link.watchStatus?.clockOffset, abs(off) > 60 { ClockWarningCard(offset: off) }
-                    if !health.authorized { HealthAccessCard() }
-                    MetricsGrid(summary: health.summary)
-                    ShutterCard { showCamera = true }
-                    SyncCard()
-                    if let error = link.lastError ?? health.lastError {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                            .card()
+                hero
+
+                HStack(spacing: 6) {
+                    OrbButton(title: link.findingWatch ? "Stop" : "Find", symbol: link.findingWatch ? "speaker.slash.fill" : "speaker.wave.3.fill",
+                              color: .orange, active: link.findingWatch) { link.findWatch(!link.findingWatch) }
+                        .disabled(!connected).opacity(connected ? 1 : 0.4)
+                    OrbButton(title: "Camera", symbol: "camera.fill", color: Theme.accent2) { showCamera = true }
+                    OrbButton(title: "Faces", symbol: "paintpalette.fill", color: Theme.accent3) { tab = 2 }
+                    OrbButton(title: "DND", symbol: "moon.fill", color: Theme.accent,
+                              active: link.watchStatus?.settings[WatchSetting.doNotDisturb.rawValue] == 1) {
+                        let on = link.watchStatus?.settings[WatchSetting.doNotDisturb.rawValue] == 1
+                        link.set(.doNotDisturb, on ? 0 : 1)
                     }
-                    Button(role: .destructive) { confirmForget = true } label: {
-                        Text("Forget this watch").frame(maxWidth: .infinity)
-                    }
-                    .padding(.top, 8)
-                    .confirmationDialog("Forget this watch?", isPresented: $confirmForget, titleVisibility: .visible) {
-                        Button("Forget", role: .destructive) { link.forgetWatch() }
-                    } message: {
-                        Text("Also tap Forget iPhone on the watch, then remove it in Settings → Bluetooth.")
-                    }
+                    .disabled(!connected || link.watchStatus?.perms.dnd != true).opacity(connected ? 1 : 0.4)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 32)
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Galaxy Bridge")
-            .fullScreenCover(isPresented: $showCamera) { CameraScreen() }
-            .navigationDestination(isPresented: $showStore) { StoreScreen() }
-            .toolbar {
-                NavigationLink { WatchSettingsView() } label: { Image(systemName: "gearshape.fill") }
-                    .accessibilityLabel("Watch settings")
-            }
-            .task {
-                await health.requestAccess()
-                await phone.requestPermissions()
-                phone.refresh()
-            }
-        }
-        .tint(Theme.accent)
-    }
-}
 
-// MARK: More features
+                if phone.findingPhone { FindingPhoneBanner() }
+                if connected, link.watchStatus?.perms.ancs == false { NotificationSetupCard() }
+                if let off = link.watchStatus?.clockOffset, abs(off) > 60 { ClockWarningCard(offset: off) }
+                if !health.authorized { HealthAccessCard() }
 
-private struct MoreCard: View {
-    var body: some View {
-        NavigationLink { MoreView() } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "square.grid.2x2.fill")
-                    .font(.title3).foregroundStyle(.white).frame(width: 44, height: 44)
-                    .background(LinearGradient(colors: [Theme.accent, Theme.accent2], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("More for your watch").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Text("Play Store, apps, contacts, notifications, photos, recordings, alarms, tiles")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+                SectionTitle(text: "Today")
+                Button { tab = 1 } label: { TodayCard(summary: health.summary) }.buttonStyle(PressScale())
+
+                SectionTitle(text: "Your watch")
+                InfoGrid()
+                SyncCard()
+
+                if let error = link.lastError ?? health.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding().card()
                 }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+
+                Button(role: .destructive) { confirmForget = true } label: {
+                    Text("Forget this watch").font(.footnote.weight(.semibold)).frame(maxWidth: .infinity)
+                }
+                .padding(.top, 8)
+                .confirmationDialog("Forget this watch?", isPresented: $confirmForget, titleVisibility: .visible) {
+                    Button("Forget", role: .destructive) { link.forgetWatch() }
+                } message: {
+                    Text("Also tap Forget iPhone on the watch, then remove it in Settings → Bluetooth.")
+                }
             }
-            .padding(16)
-            .card()
+            .padding(.horizontal, 18)
+            .padding(.bottom, 40)
         }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: Quick actions
-
-private struct QuickActions: View {
-    @EnvironmentObject var link: WatchLink
-    let openCamera: () -> Void
-    let openStore: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            action(link.findingWatch ? "Stop" : "Find watch", link.findingWatch ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                   .orange, enabled: link.status == .connected) { link.findWatch(!link.findingWatch) }
-            action("Camera", "camera.fill", Theme.accent2) { openCamera() }
-            NavigationLink { WatchSettingsView() } label: { tile("Settings", "slider.horizontal.3", Theme.accent) }
-                .buttonStyle(.plain)
-            action("Faces", "paintpalette.fill", .pink) { openStore() }
-        }
+        .background(AuroraBackground())
+        .toolbar(.hidden, for: .navigationBar)
+        .fullScreenCover(isPresented: $showCamera) { CameraScreen() }
+        .toast($hub.toast)
     }
 
-    private func action(_ title: String, _ symbol: String, _ color: Color, enabled: Bool = true,
-                        _ run: @escaping () -> Void) -> some View {
-        Button(action: run) { tile(title, symbol, color) }
-            .buttonStyle(.plain)
-            .disabled(!enabled)
-            .opacity(enabled ? 1 : 0.45)
-    }
-
-    private func tile(_ title: String, _ symbol: String, _ color: Color) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(color.gradient, in: Circle())
-            Text(title).font(.caption.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+    private var hero: some View {
+        VStack(spacing: 6) {
+            WatchRender(battery: link.watchBattery, connected: connected, face: hub.faceImage)
+            Text(link.watchStatus.map { WatchNames.marketingName($0.model) } ?? "Galaxy Watch")
+                .font(.title2.weight(.bold)).foregroundStyle(.white)
+            if let face = hub.faceName { Text(face).font(.caption).foregroundStyle(.white.opacity(0.6)) }
+            StatusPill(status: link.status)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .card()
     }
 }
+
+enum WatchNames {
+    static func marketingName(_ model: String) -> String {
+        switch model {
+        case "SM-R890", "SM-R895", "SM-R880", "SM-R885": return "Galaxy Watch4 Classic"
+        case "SM-R860", "SM-R865", "SM-R870", "SM-R875": return "Galaxy Watch4"
+        case "SM-R900", "SM-R905", "SM-R910", "SM-R915": return "Galaxy Watch5"
+        case "SM-R920", "SM-R925": return "Galaxy Watch5 Pro"
+        case "SM-R930", "SM-R935", "SM-R940", "SM-R945": return "Galaxy Watch6"
+        case "SM-R950", "SM-R955", "SM-R960", "SM-R965": return "Galaxy Watch6 Classic"
+        default: return model.isEmpty ? "Galaxy Watch" : model
+        }
+    }
+}
+
+private struct TodayCard: View {
+    let summary: DaySummary
+
+    var body: some View {
+        HStack(spacing: 18) {
+            ActivityRings(rings: [
+                (summary.energy / 500, Theme.energy),
+                (summary.steps / 10_000, Theme.steps),
+                (summary.distance / 8_000, Theme.distance),
+            ], lineWidth: 11)
+            .frame(width: 104, height: 104)
+            VStack(alignment: .leading, spacing: 7) {
+                stat(summary.steps.formatted(.number.precision(.fractionLength(0))), "steps", Theme.steps)
+                stat(summary.energy.formatted(.number.precision(.fractionLength(0))), "kcal", Theme.energy)
+                stat((summary.distance / 1000).formatted(.number.precision(.fractionLength(2))), "km", Theme.distance)
+                HStack(spacing: 6) {
+                    HeartBeat(bpm: summary.heartRate).font(.subheadline)
+                    Text(summary.heartRate.map { "\(Int($0.rounded()))" } ?? "–").font(.headline.monospacedDigit()).foregroundStyle(.white)
+                    Text("bpm").font(.caption).foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .card()
+    }
+
+    private func stat(_ value: String, _ unit: String, _ color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(value).font(.headline.monospacedDigit()).foregroundStyle(.white).contentTransition(.numericText())
+            Text(unit).font(.caption).foregroundStyle(.white.opacity(0.6))
+        }
+    }
+}
+
+private struct InfoGrid: View {
+    @EnvironmentObject var link: WatchLink
+    @EnvironmentObject var phone: PhoneServices
+
+    var body: some View {
+        let s = link.watchStatus
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            tile("Battery", s.map { "\($0.pct)%" } ?? "–", s?.charging == true ? "Charging" : "Watch", "battery.75percent", Theme.steps)
+            tile("Signal", link.rssi.map { "\($0) dBm" } ?? "–", link.rssi.map { $0 > -65 ? "Strong" : $0 > -80 ? "Good" : "Weak" } ?? "Bluetooth",
+                 "antenna.radiowaves.left.and.right", Theme.accent2)
+            tile("Storage", s.map { "\(($0.freeMB / 1000).formatted()) GB" } ?? "–", "free", "internaldrive.fill", Theme.accent)
+            tile("Weather", phone.weather.map { "\(Int($0.tempC.rounded()))°" } ?? "–", phone.weather?.place ?? "On watch", "cloud.sun.fill", Theme.energy)
+        }
+    }
+
+    private func tile(_ title: String, _ value: String, _ sub: String, _ symbol: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(color)
+                .frame(width: 32, height: 32).background(color.opacity(0.18), in: Circle())
+            Text(title).font(.caption).foregroundStyle(.white.opacity(0.6))
+            Text(value).font(.system(.title3, design: .rounded).weight(.bold)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.6)
+            Text(sub).font(.caption2).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .card(cornerRadius: 20)
+    }
+}
+
+// MARK: Health
+
+private struct HealthView: View {
+    @EnvironmentObject var health: HealthSync
+
+    var body: some View {
+        let s = health.summary
+        ScrollView {
+            VStack(spacing: 18) {
+                VStack(spacing: 4) {
+                    HeartBeat(bpm: s.heartRate).font(.system(size: 54))
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(s.heartRate.map { "\(Int($0.rounded()))" } ?? "–")
+                            .font(.system(size: 72, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                            .contentTransition(.numericText())
+                        Text("BPM").font(.headline).foregroundStyle(Theme.heart)
+                    }
+                    if let at = s.heartRateAt {
+                        Text("Measured \(at.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                .padding(.top, 10)
+
+                ZStack {
+                    ActivityRings(rings: [(s.energy / 500, Theme.energy), (s.steps / 10_000, Theme.steps), (s.distance / 8_000, Theme.distance)],
+                                  lineWidth: 22)
+                        .frame(width: 230, height: 230)
+                    VStack(spacing: 0) {
+                        Text(s.steps.formatted(.number.precision(.fractionLength(0))))
+                            .font(.system(size: 30, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                        Text("steps").font(.caption).foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                .padding(.vertical, 6)
+
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    MetricTile(title: "Active energy", symbol: "flame.fill", color: Theme.energy,
+                               value: s.energy.formatted(.number.precision(.fractionLength(0))), unit: "of 500 kcal")
+                    MetricTile(title: "Steps", symbol: "figure.walk", color: Theme.steps,
+                               value: s.steps.formatted(.number.precision(.fractionLength(0))), unit: "of 10,000")
+                    MetricTile(title: "Distance", symbol: "location.north.line.fill", color: Theme.distance,
+                               value: (s.distance / 1000).formatted(.number.precision(.fractionLength(2))), unit: "km")
+                    MetricTile(title: "Heart rate", symbol: "heart.fill", color: Theme.heart,
+                               value: s.heartRate.map { "\(Int($0.rounded()))" } ?? "–", unit: "bpm")
+                }
+
+                SyncCard()
+                NavigationLink { WorkoutsInfoView() } label: {
+                    Label("Record a workout on the watch", systemImage: "figure.run")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(16).card()
+                }
+                .buttonStyle(PressScale())
+                if !health.authorized { HealthAccessCard() }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 40)
+        }
+        .background(AuroraBackground())
+        .navigationTitle("Health")
+    }
+}
+
+// MARK: Cards
 
 private struct NotificationSetupCard: View {
     var body: some View {
@@ -181,7 +296,7 @@ private struct ClockWarningCard: View {
             Label("Watch time is wrong", systemImage: "clock.badge.exclamationmark.fill")
                 .font(.headline)
                 .foregroundStyle(.orange)
-            Text("It's \(Duration.seconds(abs(offset)).formatted(.units(allowed: [.days, .hours, .minutes], width: .wide, maximumUnitCount: 2))) \(offset < 0 ? "behind" : "ahead"). On the watch, open Galaxy Bridge and tap **Watch time is wrong**, or go to Settings → General → Date and time and turn on **Automatic date and time** with Wi-Fi on. Health data is corrected automatically.")
+            Text("It's \(Duration.seconds(abs(offset)).formatted(.units(allowed: [.days, .hours, .minutes], width: .wide, maximumUnitCount: 2))) \(offset < 0 ? "behind" : "ahead"). On the watch, open Wear OS Bridge and tap **Watch time is wrong**, or go to Settings → General → Date and time and turn on **Automatic date and time** with Wi-Fi on. Health data is corrected automatically.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -203,99 +318,6 @@ private struct FindingPhoneBanner: View {
         }
         .padding(16)
         .card()
-    }
-}
-
-// MARK: Watch card
-
-private struct WatchCard: View {
-    @EnvironmentObject var link: WatchLink
-
-    var body: some View {
-        HStack(spacing: 20) {
-            WatchFace(battery: link.watchBattery, connected: link.status == .connected)
-                .frame(width: 112, height: 112)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(link.watchStatus.map { Self.marketingName($0.model) } ?? "Galaxy Watch")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                StatusPill(status: link.status)
-                if let battery = link.watchBattery {
-                    Label("\(battery)% battery", systemImage: batterySymbol(battery))
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                if let version = link.watchAppVersion {
-                    Text("Watch app \(version)")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-        .background(Theme.headerGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: Theme.accent.opacity(0.35), radius: 16, y: 8)
-    }
-
-    static func marketingName(_ model: String) -> String {
-        switch model {
-        case "SM-R890", "SM-R895", "SM-R880", "SM-R885": return "Galaxy Watch4 Classic"
-        case "SM-R860", "SM-R865", "SM-R870", "SM-R875": return "Galaxy Watch4"
-        case "SM-R900", "SM-R905", "SM-R910", "SM-R915": return "Galaxy Watch5"
-        case "SM-R920", "SM-R925": return "Galaxy Watch5 Pro"
-        case "SM-R930", "SM-R935", "SM-R940", "SM-R945": return "Galaxy Watch6"
-        case "SM-R950", "SM-R955", "SM-R960", "SM-R965": return "Galaxy Watch6 Classic"
-        default: return model.isEmpty ? "Galaxy Watch" : model
-        }
-    }
-
-    private func batterySymbol(_ pct: Int) -> String {
-        switch pct {
-        case ..<13: return "battery.0percent"
-        case ..<38: return "battery.25percent"
-        case ..<63: return "battery.50percent"
-        case ..<88: return "battery.75percent"
-        default: return "battery.100percent"
-        }
-    }
-}
-
-/// A round watch face with a bezel, echoing the Watch4 Classic's rotating bezel.
-private struct WatchFace: View {
-    let battery: Int?
-    let connected: Bool
-
-    var body: some View {
-        ZStack {
-            Circle().fill(.black.opacity(0.85))
-            ForEach(0..<60, id: \.self) { i in
-                Capsule()
-                    .fill(.white.opacity(i % 5 == 0 ? 0.9 : 0.35))
-                    .frame(width: i % 5 == 0 ? 2.5 : 1.2, height: i % 5 == 0 ? 7 : 4)
-                    .offset(y: -47)
-                    .rotationEffect(.degrees(Double(i) * 6))
-            }
-            Circle()
-                .trim(from: 0, to: CGFloat(battery ?? 0) / 100)
-                .stroke(Theme.accent2, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .padding(18)
-                .animation(.easeOut(duration: 0.6), value: battery)
-            VStack(spacing: 2) {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(context.date, format: .dateTime.hour().minute())
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-                Image(systemName: connected ? "iphone.radiowaves.left.and.right" : "iphone.slash")
-                    .font(.caption)
-                    .foregroundStyle(connected ? Theme.accent2 : .white.opacity(0.5))
-            }
-        }
-        .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 3))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(connected ? "Watch connected" : "Watch not connected")
     }
 }
 
@@ -333,26 +355,6 @@ private struct StatusPill: View {
         case .connected: return .green
         case .connecting, .searching: return .yellow
         case .bluetoothOff, .unauthorized, .notPaired, .needsRepair: return .red
-        }
-    }
-}
-
-// MARK: Metrics
-
-private struct MetricsGrid: View {
-    let summary: DaySummary
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-            MetricTile(title: "Heart rate", symbol: "heart.fill", color: Theme.heart,
-                       value: summary.heartRate.map { "\(Int($0.rounded()))" } ?? "–", unit: "bpm",
-                       footnote: summary.heartRateAt.map { "Updated \($0.formatted(.relative(presentation: .named)))" })
-            MetricTile(title: "Steps", symbol: "figure.walk", color: Theme.steps,
-                       value: summary.steps.formatted(.number.precision(.fractionLength(0))), unit: "today")
-            MetricTile(title: "Distance", symbol: "location.north.line.fill", color: Theme.distance,
-                       value: (summary.distance / 1000).formatted(.number.precision(.fractionLength(2))), unit: "km")
-            MetricTile(title: "Active energy", symbol: "flame.fill", color: Theme.energy,
-                       value: summary.energy.formatted(.number.precision(.fractionLength(0))), unit: "kcal")
         }
     }
 }
@@ -395,63 +397,6 @@ private struct MetricTile: View {
     }
 }
 
-// MARK: Shutter, sync, access
-
-private struct ShutterCard: View {
-    let openCamera: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Remote shutter", systemImage: "camera.shutter.button.fill")
-                .font(.headline)
-            Text("Open the Camera app (or the camera below), then tap Shutter on your watch. The first time, accept the Bluetooth keyboard request on your iPhone.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Button(action: openCamera) {
-                Label("Open Galaxy Bridge camera", systemImage: "camera.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-        }
-        .padding(16)
-        .card()
-    }
-}
-
-enum PlayStore {
-    static let watchFaces = URL(string: "https://play.google.com/store/apps/category/WATCH_FACE")!
-}
-
-private struct WatchFacesCard: View {
-    let open: () -> Void
-
-    var body: some View {
-        Button(action: open) {
-            HStack(spacing: 14) {
-                Image(systemName: "paintpalette.fill")
-                    .font(.title3)
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Get watch faces").font(.subheadline.weight(.semibold))
-                    Text("Browse Google Play and install to your watch")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
-            }
-            .padding(16)
-            .card()
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// Safari's own view: Google sign-in stays inside Safari and is never visible to this app.
 struct SafariView: UIViewControllerRepresentable {
     let url: URL
 
@@ -495,7 +440,7 @@ private struct HealthAccessCard: View {
             Label("Connect Apple Health", systemImage: "heart.circle.fill")
                 .font(.headline)
                 .foregroundStyle(Theme.heart)
-            Text("Allow Galaxy Bridge to write heart rate, steps, distance and active energy. It never reads your existing data.")
+            Text("Allow Wear OS Bridge to write heart rate, steps, distance, energy, floors and workouts. It never reads your existing data.")
                 .font(.subheadline).foregroundStyle(.secondary)
             Button("Allow access") { Task { await health.requestAccess() } }
                 .buttonStyle(.borderedProminent)
@@ -506,9 +451,3 @@ private struct HealthAccessCard: View {
     }
 }
 
-extension View {
-    func card() -> some View {
-        background(Color(.secondarySystemGroupedBackground),
-                   in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-}

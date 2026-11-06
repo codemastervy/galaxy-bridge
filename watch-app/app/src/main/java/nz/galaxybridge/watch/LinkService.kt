@@ -201,6 +201,8 @@ class LinkService : Service() {
         AppleClient.connected.onEach { sendStatus() }.launchIn(scope)
         trustedDevice()?.let { apple.connect(it) }
         registerReceiver(bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
+        @Suppress("DEPRECATION")
+        registerReceiver(faceReceiver, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
         status.value = Status.WAITING
     }
 
@@ -209,6 +211,7 @@ class LinkService : Service() {
     override fun onDestroy() {
         scope.cancel()
         runCatching { unregisterReceiver(bondReceiver) }
+        runCatching { unregisterReceiver(faceReceiver) }
         ring(false)
         apple.close()
         media.release()
@@ -224,7 +227,7 @@ class LinkService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "iPhone connection", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(this, CHANNEL)
-            .setContentTitle("Galaxy Bridge")
+            .setContentTitle("Wear OS Bridge")
             .setContentText("Keeping your iPhone connected")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
@@ -328,6 +331,13 @@ class LinkService : Service() {
         setPairingWindow(false)
         if (previous != null && previous != device) server?.cancelConnection(previous)
         return true
+    }
+
+    /** Tells the iPhone when the watch face changes, so its picture of the watch matches. */
+    private val faceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            handler.postDelayed({ sendFeature("face", WatchFaces.describeActive(this@LinkService)) }, 1500)
+        }
     }
 
     /** A phone that subscribed while its pairing was still finishing. */

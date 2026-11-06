@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 
 /**
- * Live preview and controls for Galaxy Bridge's own iPhone camera. While the watch shows the
+ * Live preview and controls for Wear OS Bridge's own iPhone camera. While the watch shows the
  * camera page it asks for frames ("camView"); the phone sends small JPEGs about twice a second.
  */
 object CameraRemote {

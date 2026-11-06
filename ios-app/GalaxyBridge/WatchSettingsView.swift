@@ -89,7 +89,7 @@ struct WatchSettingsView: View {
                 Text("Display & sounds")
             } footer: {
                 if let p = s?.perms, !p.system || !p.dnd {
-                    Text("Some options need a one-time permission on the watch: Galaxy Bridge → Settings → Let iPhone change.")
+                    Text("Some options need a one-time permission on the watch: Wear OS Bridge → Settings → Let iPhone change.")
                 }
             }
 
@@ -144,7 +144,7 @@ struct WatchSettingsView: View {
                 Section("About") {
                     row("Model", s.model)
                     row("Software", s.os)
-                    row("Galaxy Bridge on watch", s.app)
+                    row("Wear OS Bridge on watch", s.app)
                     row("Battery", "\(s.pct)%" + (s.charging ? " · charging" : ""))
                     if s.totalMB > 0 {
                         row("Storage", "\(gb(s.freeMB)) free of \(gb(s.totalMB))")
@@ -152,6 +152,7 @@ struct WatchSettingsView: View {
                 }
             }
         }
+        .auroraScreen()
         .navigationTitle("Watch settings")
         .navigationBarTitleDisplayMode(.inline)
         .disabled(!connected)
@@ -213,6 +214,7 @@ struct SoundsView: View {
             }
         }
         .overlay { if hub.ringtones.isEmpty { ProgressView() } }
+        .auroraScreen()
         .navigationTitle("Sounds")
         .onAppear { hub.requestSounds() }
     }
@@ -240,6 +242,7 @@ struct ConnectionHistoryView: View {
             }
         }
         .overlay { if link.history.isEmpty { ContentUnavailableView("No history yet", systemImage: "clock") } }
+        .auroraScreen()
         .navigationTitle("Connection history")
     }
 }

@@ -69,7 +69,7 @@ final class HealthSync: ObservableObject {
             case .sharingAuthorized: break
             case .sharingDenied: continue // The user's choice; drop rather than retry forever.
             default:
-                lastError = "Allow Galaxy Bridge to write to Apple Health"
+                lastError = "Allow Wear OS Bridge to write to Apple Health"
                 return false
             }
             samples.append(HKQuantitySample(
@@ -120,7 +120,7 @@ extension HealthSync {
         default: .other
         }
         guard store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized else {
-            lastError = "Allow Galaxy Bridge to save workouts in Apple Health"
+            lastError = "Allow Wear OS Bridge to save workouts in Apple Health"
             return false
         }
         let startDate = Date(timeIntervalSince1970: Double(start) / 1000)

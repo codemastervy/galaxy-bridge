@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Galaxy Bridge mark: round watch with bezel, health ring and heart. 108dp canvas, art inside the 66dp safe zone. -->
+<!-- Wear OS Bridge mark: round watch with bezel, health ring and heart. 108dp canvas, art inside the 66dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">

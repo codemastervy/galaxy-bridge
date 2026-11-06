@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Presents the watch to the iPhone as a Bluetooth remote with a single Volume Up button,
- * which the iPhone's Camera app (and Galaxy Bridge's camera) treat as the shutter.
+ * which the iPhone's Camera app (and Wear OS Bridge's camera) treat as the shutter.
  *
  * The report descriptor only declares the Consumer Control "Volume Increment" usage, so this
  * device cannot type keys or send any other input.
@@ -73,7 +73,7 @@ class HidShutter(private val context: Context, private val trustedAddress: () ->
                 val device = proxy as BluetoothHidDevice
                 hid = device
                 val sdp = BluetoothHidDeviceAppSdpSettings(
-                    "Galaxy Bridge Shutter", "Camera remote", "Galaxy Bridge",
+                    "Wear OS Bridge Shutter", "Camera remote", "Wear OS Bridge",
                     BluetoothHidDevice.SUBCLASS1_NONE, DESCRIPTOR,
                 )
                 device.registerApp(sdp, null, null, context.mainExecutor, callback)

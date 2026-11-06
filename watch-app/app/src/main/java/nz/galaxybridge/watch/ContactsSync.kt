@@ -30,7 +30,7 @@ object ContactsSync {
         val items = j.optJSONArray("items") ?: return
         if (page < 0 || pages !in 1..200 || page >= pages || items.length() > 200) return
         if (s.checkSelfPermission(android.Manifest.permission.WRITE_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            Features.result(s, "contacts", false, "Allow Contacts for Galaxy Bridge on the watch")
+            Features.result(s, "contacts", false, "Allow Contacts for Wear OS Bridge on the watch")
             return
         }
         if (page == 0) clear(s)

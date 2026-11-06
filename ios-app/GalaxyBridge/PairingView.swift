@@ -17,9 +17,9 @@ struct PairingView: View {
                         Button {
                             link.startPairing()
                         } label: {
-                            Text("Find my watch").frame(maxWidth: .infinity)
+                            Label("Find my watch", systemImage: "dot.radiowaves.left.and.right").font(.headline).frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).tint(Theme.accent)
                         .controlSize(.large)
                     }
                     if let error = link.lastError {
@@ -31,7 +31,7 @@ struct PairingView: View {
                 }
                 .padding(20)
             }
-            .background(Color(.systemGroupedBackground))
+            .auroraScreen()
             .toolbar {
                 if link.isPairing {
                     Button("Cancel") { link.stopPairing() }
@@ -39,25 +39,29 @@ struct PairingView: View {
             }
         }
         .tint(Theme.accent)
+        .preferredColorScheme(.dark)
     }
 
     private var hero: some View {
         VStack(spacing: 14) {
+            Wordmark()
             ZStack {
-                Circle().fill(Theme.headerGradient).frame(width: 132, height: 132)
-                    .shadow(color: Theme.accent.opacity(0.4), radius: 20, y: 10)
-                Image(systemName: link.isPairing ? "dot.radiowaves.left.and.right" : "applewatch.side.right")
-                    .font(.system(size: 52, weight: .medium))
-                    .foregroundStyle(.white)
-                    .symbolEffect(.variableColor.iterative, isActive: link.isPairing)
+                ForEach(0..<3) { i in
+                    Circle().strokeBorder(Theme.accent2.opacity(0.35 - Double(i) * 0.1), lineWidth: 1.5)
+                        .frame(width: 250 + CGFloat(i) * 46, height: 250 + CGFloat(i) * 46)
+                        .scaleEffect(link.isPairing ? 1.06 : 1)
+                        .animation(link.isPairing ? .easeInOut(duration: 1.2).repeatForever().delay(Double(i) * 0.25) : .default, value: link.isPairing)
+                }
+                WatchRender(battery: nil, connected: link.isPairing, size: 200)
             }
+            .frame(height: 300)
             Text(link.isPairing ? "Looking for your watch" : "Pair your Galaxy Watch")
-                .font(.title2.weight(.bold))
+                .font(.title2.weight(.bold)).foregroundStyle(.white)
             Text(link.isPairing
-                 ? "Keep the watch close and its Galaxy Bridge app in pairing mode."
-                 : "Galaxy Bridge syncs your health data to Apple Health and turns your watch into a camera remote.")
+                 ? "Keep the watch close and its Wear OS Bridge app in pairing mode."
+                 : "Wear OS Bridge syncs your health data to Apple Health and turns your watch into a camera remote.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
         }
         .padding(.top, 12)
@@ -65,7 +69,7 @@ struct PairingView: View {
 
     private var steps: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Step(number: 1, text: "Open **Galaxy Bridge** on your watch.")
+            Step(number: 1, text: "Open **Wear OS Bridge** on your watch.")
             Step(number: 2, text: "Tap **Pair iPhone** (or **Pair new phone**).")
             Step(number: 3, text: "Tap **Find my watch** below and choose it.")
             Step(number: 4, text: "Check the **code matches** on both screens, then accept on both.")

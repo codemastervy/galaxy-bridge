@@ -41,6 +41,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.wear.compose.material.Icon
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -148,7 +157,8 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             timeText = { TimeText() },
             positionIndicator = { PositionIndicator(scalingLazyListState = listState) },
-            modifier = Modifier.background(Brush.verticalGradient(listOf(Color(0xFF14163A), Color.Black))),
+            modifier = Modifier.background(Color.Black).background(Brush.radialGradient(
+                listOf(Color(0xFF2A1F6B), Color(0xFF0B1F33), Color.Black), radius = 420f)),
         ) {
             ScalingLazyColumn(
                 state = listState,
@@ -170,17 +180,24 @@ class MainActivity : ComponentActivity() {
     // --- Home ---
 
     private fun ScalingLazyListScope.homePage() {
-        item { StatusHeader() }
+        item { HeroRing() }
         item { PairingOrNothing() }
         item { ClockCard() }
-        item { PhoneSummary() }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Launcher(R.drawable.ic_run, "Workout", Good, Color(0xFF0E8F5A)) { page = PAGE_WORKOUT }
+                Launcher(R.drawable.ic_music, "Music", Accent, Color(0xFFB04CFF)) { page = PAGE_MUSIC }
+                Launcher(R.drawable.ic_camera, "Camera", Accent2, Color(0xFF1E5BB8)) { page = PAGE_CAMERA }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Launcher(R.drawable.ic_find, "Find", Wait, Color(0xFFFF7A2E)) { page = PAGE_FIND }
+                Launcher(R.drawable.ic_tune, "Settings", Color(0xFF8E96B8), Color(0xFF3A3F5C)) { page = PAGE_SETTINGS }
+            }
+        }
         item { WeatherCard() }
         item { AgendaCard() }
-        item { NavChip("Workout", "Run, walk, cycle with GPS", Good) { page = PAGE_WORKOUT } }
-        item { NavChip("Music", "Control iPhone playback", Accent) { page = PAGE_MUSIC } }
-        item { NavChip("Camera remote", "Shutter for iPhone camera", Accent2) { page = PAGE_CAMERA } }
-        item { NavChip("Find iPhone", "Play a sound on your phone", Wait) { page = PAGE_FIND } }
-        item { NavChip("Settings", "Notifications, sync, phone", Color.Gray) { page = PAGE_SETTINGS } }
     }
 
     @Composable
@@ -337,7 +354,7 @@ class MainActivity : ComponentActivity() {
         }
         item {
             val remote by HidShutter.connected.collectAsState()
-            Text(if (remote) "Works in the iPhone Camera app" else "Open the camera in Galaxy Bridge on your iPhone",
+            Text(if (remote) "Works in the iPhone Camera app" else "Open the camera in Wear OS Bridge on your iPhone",
                 style = MaterialTheme.typography.caption3, color = Dim, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 20.dp))
         }
@@ -427,7 +444,7 @@ class MainActivity : ComponentActivity() {
             ) { Text(if (finding) "Stop" else "Ring", fontWeight = FontWeight.Bold, color = Color.Black) }
         }
         item {
-            Text("Your iPhone plays a sound, even on silent if Galaxy Bridge is allowed to send alerts.",
+            Text("Your iPhone plays a sound, even on silent if Wear OS Bridge is allowed to send alerts.",
                 style = MaterialTheme.typography.caption3, color = Dim, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 20.dp))
         }
@@ -532,7 +549,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun AboutText() {
-        Text("Galaxy Bridge ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.caption3, color = Dim,
+        Text("Wear OS Bridge ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.caption3, color = Dim,
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
     }
 
@@ -549,6 +566,63 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Round status hero: the arc is the iPhone's battery, the glow shows the link state. */
+@Composable
+private fun HeroRing() {
+    val status by LinkService.statusFlow().collectAsState()
+    val battery by LinkService.phoneBattery.collectAsState()
+    val ancs by AppleClient.connected.collectAsState()
+    val pending by LinkService.pending.collectAsState()
+    val connected = status == LinkService.Status.CONNECTED
+    val level by animateFloatAsState((battery?.percent ?: 0) / 100f, label = "level")
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        0.35f, 0.8f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "glow")
+    val glow = if (connected) Accent2 else Wait
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(top = 18.dp).size(132.dp)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = 9.dp.toPx()
+            drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = 0.28f * pulse), Color.Transparent)))
+            drawArc(Color.White.copy(alpha = 0.10f), 0f, 360f, false, style = Stroke(w))
+            if (connected && battery != null) drawArc(
+                Brush.sweepGradient(listOf(Accent2, Accent, Color(0xFFB04CFF), Accent2)),
+                -90f, 360f * level, false, style = Stroke(w, cap = StrokeCap.Round))
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("WEAR OS BRIDGE", fontSize = 8.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold, color = Accent2)
+            Text(if (connected) battery?.let { "${it.percent}%" } ?: "—" else "—",
+                fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(if (battery?.charging == true && connected) "iPhone ⚡" else "iPhone",
+                style = MaterialTheme.typography.caption3, color = Dim)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp)) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(if (connected) Good else Wait))
+                Spacer(Modifier.size(4.dp))
+                Text(when (status) {
+                    LinkService.Status.CONNECTED -> if (ancs) "Linked · alerts on" else "Linked"
+                    LinkService.Status.WAITING -> "Waiting"
+                    LinkService.Status.STOPPED -> "Allow permissions"
+                }, fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f))
+            }
+        }
+    }
+    if (pending > 0) Text(if (connected) "Syncing $pending to Health" else "$pending waiting for iPhone",
+        style = MaterialTheme.typography.caption3, color = Accent2)
+}
+
+/** Round gradient launcher with a caption. */
+@Composable
+private fun Launcher(icon: Int, label: String, from: Color, to: Color, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Button(onClick = onClick, modifier = Modifier.size(48.dp),
+            colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent)) {
+            Box(Modifier.fillMaxSize().clip(CircleShape).background(Brush.linearGradient(listOf(from, to))),
+                contentAlignment = Alignment.Center) {
+                Icon(painterResource(icon), contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
+            }
+        }
+        Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
 @Composable
 private fun StatusHeader() {
     val status by LinkService.statusFlow().collectAsState()
@@ -556,7 +630,7 @@ private fun StatusHeader() {
     val connected = status == LinkService.Status.CONNECTED
     val dot by animateColorAsState(if (connected) Good else Wait, label = "dot")
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 24.dp)) {
-        Text("Galaxy Bridge", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.White)
+        Text("Wear OS Bridge", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.White)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
             Spacer(Modifier.size(6.dp))
@@ -593,7 +667,7 @@ private fun PairingCard(until: Long, onCancel: () -> Unit) {
             .padding(12.dp),
     ) {
         Text("Ready to pair", fontWeight = FontWeight.SemiBold, color = Color.White)
-        Text("On your iPhone: Galaxy Bridge → Find my watch. Check the codes match.",
+        Text("On your iPhone: Wear OS Bridge → Find my watch. Check the codes match.",
             style = MaterialTheme.typography.caption3, color = Color.White, textAlign = TextAlign.Center)
         Text("${seconds / 60}:${"%02d".format(seconds % 60)}", style = MaterialTheme.typography.caption2,
             color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 4.dp))

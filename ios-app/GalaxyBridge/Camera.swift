@@ -31,7 +31,7 @@ final class Camera: NSObject, ObservableObject {
 
     func start() async {
         guard await AVCaptureDevice.requestAccess(for: .video) else {
-            message = "Camera access is off. Turn it on in Settings → Galaxy Bridge."
+            message = "Camera access is off. Turn it on in Settings → Wear OS Bridge."
             return
         }
         let session = session, output = output, video = video
@@ -114,7 +114,7 @@ final class Camera: NSObject, ObservableObject {
     private func save(_ data: Data) async {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
-            message = "Allow adding photos in Settings → Galaxy Bridge"
+            message = "Allow adding photos in Settings → Wear OS Bridge"
             return
         }
         do {

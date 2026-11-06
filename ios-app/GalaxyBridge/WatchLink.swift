@@ -4,7 +4,7 @@ import os
 import UserNotifications
 import WearLink
 
-/// Connects to the Galaxy Bridge watch app over GBLink and keeps the connection alive,
+/// Connects to the Wear OS Bridge watch app over GBLink and keeps the connection alive,
 /// including in the background (bluetooth-central mode + state restoration).
 @MainActor
 final class WatchLink: NSObject, ObservableObject {
@@ -105,7 +105,7 @@ final class WatchLink: NSObject, ObservableObject {
         status = .notPaired
     }
 
-    /// Lists nearby watches whose Galaxy Bridge app is in pairing mode. Nothing connects until
+    /// Lists nearby watches whose Wear OS Bridge app is in pairing mode. Nothing connects until
     /// the user picks one.
     func startPairing() {
         isPairing = true
@@ -185,7 +185,7 @@ final class WatchLink: NSObject, ObservableObject {
         UserDefaults.standard.string(forKey: Self.knownPeripheralKey).flatMap(UUID.init(uuidString:))
     }
 
-    /// Reconnects only to the watch the user paired; never to other Galaxy Bridge watches.
+    /// Reconnects only to the watch the user paired; never to other Wear OS Bridge watches.
     private func startSearching() {
         guard central.state == .poweredOn, !isPairing else { return }
         guard let id = knownId else {
@@ -348,7 +348,7 @@ extension WatchLink: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         MainActor.assumeIsolated {
             guard let service = peripheral.services?.first(where: { $0.uuid == CBUUID(nsuuid: GBLink.service) }) else {
-                lastError = "This watch isn't running Galaxy Bridge"
+                lastError = "This watch isn't running Wear OS Bridge"
                 central.cancelPeripheralConnection(peripheral)
                 return
             }

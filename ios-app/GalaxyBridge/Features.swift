@@ -17,6 +17,11 @@ final class FeatureHub: ObservableObject {
     struct Recording: Identifiable, Equatable { let id: Int64; let name: String; let ms: Int64; let bytes: Int64; let at: Date }
 
     @Published var toast: String?
+    /// Preview and name of the face currently on the watch.
+    @Published private(set) var faceImage: UIImage? = FeatureHub.loadFace()
+    @Published private(set) var faceName: String? = UserDefaults.standard.string(forKey: "faceName")
+    @Published private(set) var faces: [WatchFace] = []
+    struct WatchFace: Identifiable, Equatable { let id: String; let name: String; let active: Bool }
     @Published private(set) var notifApps: [NotifApp] = []
     @Published private(set) var categories: [Int: Bool] = [:]
     @Published private(set) var apps: [WatchApp] = []
@@ -65,6 +70,7 @@ final class FeatureHub: ObservableObject {
     func onConnected() {
         Task { await sendReminders() }
         post("getNotifApps")
+        post("getFace")
     }
 
     // MARK: Incoming
@@ -126,6 +132,20 @@ final class FeatureHub: ObservableObject {
             default: break
             }
             sendCameraState()
+        case "face":
+            let name = (b["name"] as? String).map { String($0.prefix(60)) }
+            faceName = name
+            UserDefaults.standard.set(name, forKey: "faceName")
+            if let data = (b["png"] as? String).flatMap({ Data(base64Encoded: $0) }), data.count < 60_000,
+               let img = UIImage(data: data), img.size.width <= 600 {
+                faceImage = img
+                try? data.write(to: Self.faceURL)
+            }
+        case "faces":
+            faces = (b["items"] as? [[String: Any]] ?? []).prefix(200).compactMap {
+                guard let id = $0["pkg"] as? String, id.count <= 200 else { return nil }
+                return WatchFace(id: id, name: String(($0["name"] as? String ?? id).prefix(50)), active: $0["active"] as? Bool ?? false)
+            }
         case "result":
             let what = b["what"] as? String ?? ""
             let ok = b["ok"] as? Bool ?? false
@@ -137,13 +157,26 @@ final class FeatureHub: ObservableObject {
         }
     }
 
+    private static var faceURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("face.png")
+    }
+
+    private static func loadFace() -> UIImage? {
+        try? FileManager.default.createDirectory(at: faceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        return (try? Data(contentsOf: faceURL)).flatMap(UIImage.init(data:))
+    }
+
+    func requestFaces() { post("getFaces") }
+    func requestFace() { post("getFace") }
+    func openFacePicker() { post("openFacePicker") }
+
     // MARK: Contacts
 
     func syncContacts() async {
         let store = CNContactStore()
         if CNContactStore.authorizationStatus(for: .contacts) != .authorized {
             guard (try? await store.requestAccess(for: .contacts)) == true else {
-                toast = "Allow Contacts for Galaxy Bridge in iPhone Settings"
+                toast = "Allow Contacts for Wear OS Bridge in iPhone Settings"
                 return
             }
         }
@@ -290,7 +323,7 @@ final class FeatureHub: ObservableObject {
                 .appendingPathComponent("Watch recordings", isDirectory: true)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try recordingBuffer.write(to: dir.appendingPathComponent(safe.isEmpty ? "Recording-\(id).m4a" : safe), options: .completeFileProtection)
-            toast = "Saved to Files → On My iPhone → Galaxy Bridge"
+            toast = "Saved to Files → On My iPhone → Wear OS Bridge"
         } catch {
             toast = "Couldn't save the recording"
         }
@@ -317,40 +350,123 @@ struct MoreView: View {
     @EnvironmentObject var hub: FeatureHub
     @EnvironmentObject var link: WatchLink
 
+    private struct Item: Identifiable {
+        let title: String, sub: String, symbol: String, color: Color
+        let dest: AnyView
+        var id: String { title }
+    }
+
+    private var groups: [(String, [Item])] {
+        [
+            ("Customise", [
+                Item(title: "Watch faces", sub: "Current face, installed, picker", symbol: "paintpalette.fill", color: .pink, dest: AnyView(WatchFacesView())),
+                Item(title: "Google Play", sub: "Faces and apps", symbol: "bag.fill", color: .green, dest: AnyView(StoreScreen())),
+                Item(title: "Watch apps", sub: "Open or uninstall", symbol: "square.grid.2x2.fill", color: .blue, dest: AnyView(AppsView())),
+                Item(title: "Tiles", sub: "Swipe from the face", symbol: "rectangle.stack.fill", color: .teal, dest: AnyView(TilesInfoView())),
+            ]),
+            ("Stay in touch", [
+                Item(title: "Notifications", sub: "Apps and types", symbol: "bell.badge.fill", color: .red, dest: AnyView(NotificationFiltersView())),
+                Item(title: "Contacts", sub: "Copy to the watch", symbol: "person.crop.circle.fill", color: .gray, dest: AnyView(ContactsView())),
+                Item(title: "Reminders", sub: "Tile on the watch", symbol: "checklist", color: .orange, dest: AnyView(RemindersView())),
+                Item(title: "Alarms & timers", sub: "Set on the watch", symbol: "alarm.fill", color: .indigo, dest: AnyView(AlarmsView())),
+            ]),
+            ("Media & activity", [
+                Item(title: "Photos", sub: "Send to Gallery", symbol: "photo.fill", color: .purple, dest: AnyView(PhotosToWatchView())),
+                Item(title: "Voice recordings", sub: "Copy from watch", symbol: "waveform", color: .cyan, dest: AnyView(RecordingsView())),
+                Item(title: "Workouts", sub: "Saved to Health", symbol: "figure.run", color: .green, dest: AnyView(WorkoutsInfoView())),
+                Item(title: "Sounds", sub: "Ringtone and alerts", symbol: "speaker.wave.2.fill", color: .yellow, dest: AnyView(SoundsView())),
+            ]),
+        ]
+    }
+
     var body: some View {
-        List {
-            Section {
-                NavigationLink { StoreScreen() } label: { row("Google Play", "Watch faces and apps", "bag.fill", .green) }
-                NavigationLink { AppsView() } label: { row("Watch apps", "Open, update or uninstall", "square.grid.2x2.fill", .blue) }
+        ScrollView {
+            VStack(spacing: 18) {
+                ForEach(groups, id: \.0) { group in
+                    SectionTitle(text: group.0)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        ForEach(group.1) { item in
+                            NavigationLink { item.dest } label: { tile(item) }.buttonStyle(PressScale())
+                        }
+                    }
+                }
             }
-            Section {
-                NavigationLink { NotificationFiltersView() } label: { row("Notifications", "Choose apps and types", "bell.badge.fill", .red) }
-                NavigationLink { ContactsView() } label: { row("Contacts", "Copy to the watch's Phone app", "person.crop.circle.fill", .gray) }
-                NavigationLink { RemindersView() } label: { row("Reminders", "Tile on the watch", "checklist", .orange) }
-                NavigationLink { AlarmsView() } label: { row("Alarms & timers", "Set on the watch", "alarm.fill", .indigo) }
-            }
-            Section {
-                NavigationLink { PhotosToWatchView() } label: { row("Photos", "Send to the watch's Gallery", "photo.fill", .pink) }
-                NavigationLink { RecordingsView() } label: { row("Voice recordings", "Copy from the watch", "waveform", .purple) }
-                NavigationLink { WorkoutsInfoView() } label: { row("Workouts", "Record on the watch, saved to Health", "figure.run", .green) }
-            }
-            Section {
-                NavigationLink { TilesInfoView() } label: { row("Tiles", "Calendar, reminders, weather and more", "rectangle.stack.fill", .teal) }
-            }
+            .padding(16)
         }
+        .auroraScreen()
         .navigationTitle("More")
         .toast($hub.toast)
     }
 
-    private func row(_ title: String, _ sub: String, _ symbol: String, _ color: Color) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                .frame(width: 30, height: 30).background(color.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                Text(sub).font(.caption).foregroundStyle(.secondary)
-            }
+    private func tile(_ i: Item) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: i.symbol).font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(i.color.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: i.color.opacity(0.5), radius: 8, y: 3)
+            Spacer(minLength: 0)
+            Text(i.title).font(.subheadline.weight(.bold)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.85)
+            Text(i.sub).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(1).minimumScaleFactor(0.85)
         }
+        .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
+        .padding(14)
+        .card(cornerRadius: 22)
+    }
+}
+
+/// The face that's on the watch now, every face installed, and the watch's own picker.
+/// Wear OS doesn't let other apps switch faces, so choosing happens on the watch.
+struct WatchFacesView: View {
+    @EnvironmentObject var hub: FeatureHub
+    @EnvironmentObject var link: WatchLink
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                WatchRender(battery: link.watchBattery, connected: link.status == .connected, face: hub.faceImage, size: 210)
+                    .padding(.top, 8)
+                Text(hub.faceName ?? "Current face").font(.title3.weight(.bold)).foregroundStyle(.white)
+                Button { hub.openFacePicker() } label: {
+                    Label("Change face on watch", systemImage: "hand.tap.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large).tint(Theme.accent)
+                .disabled(link.status != .connected)
+
+                SectionTitle(text: "Installed")
+                VStack(spacing: 0) {
+                    if hub.faces.isEmpty {
+                        Text(link.status == .connected ? "Loading…" : "Connect your watch to see its faces.")
+                            .font(.subheadline).foregroundStyle(.white.opacity(0.6)).padding(18)
+                    }
+                    ForEach(hub.faces) { f in
+                        HStack(spacing: 12) {
+                            Image(systemName: f.active ? "checkmark.circle.fill" : "circle.dashed")
+                                .foregroundStyle(f.active ? Theme.accent2 : .white.opacity(0.4))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(f.name).foregroundStyle(.white)
+                                Text(f.id).font(.caption2).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+                            }
+                            Spacer()
+                            if f.active { Text("On watch").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent2) }
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        if f.id != hub.faces.last?.id { Divider().padding(.leading, 44) }
+                    }
+                }
+                .card()
+                NavigationLink { StoreScreen() } label: {
+                    Label("Get more faces on Google Play", systemImage: "bag.fill").frame(maxWidth: .infinity).padding(14).card(cornerRadius: 18)
+                }
+                .buttonStyle(PressScale()).foregroundStyle(.white)
+            }
+            .padding(16)
+        }
+        .auroraScreen()
+        .navigationTitle("Watch faces")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { hub.requestFaces(); hub.requestFace() }
+        .refreshable { hub.requestFaces(); hub.requestFace() }
+        .toast($hub.toast)
     }
 }
 
@@ -383,6 +499,7 @@ struct NotificationFiltersView: View {
                 }
             } header: { Text("Apps") }
         }
+        .auroraScreen()
         .navigationTitle("Notifications")
         .onAppear { hub.requestNotifApps() }
     }
@@ -402,6 +519,7 @@ struct ContactsView: View {
                 Text("Names, phone numbers and email addresses go only to your watch, over Bluetooth. Run it again after changing contacts; it replaces the previous copy.")
             }
         }
+        .auroraScreen()
         .navigationTitle("Contacts")
         .toast($hub.toast)
     }
@@ -420,6 +538,7 @@ struct RemindersView: View {
                 Text("Add the \"Reminders (iPhone)\" tile on your watch: swipe left from the watch face, then tap +. Tick a reminder on the tile to complete it on your iPhone.")
             }
         }
+        .auroraScreen()
         .navigationTitle("Reminders")
     }
 }
@@ -443,6 +562,7 @@ struct AlarmsView: View {
                 Button("Start timer on watch") { hub.setTimer(seconds: minutes * 60, label: label) }
             }
         }
+        .auroraScreen()
         .navigationTitle("Alarms & timers")
         .toast($hub.toast)
     }
@@ -474,6 +594,7 @@ struct AppsView: View {
             }
         }
         .overlay { if hub.loadingApps && hub.apps.isEmpty { ProgressView() } }
+        .auroraScreen()
         .navigationTitle("Watch apps")
         .refreshable { hub.requestApps() }
         .onAppear { hub.requestApps() }
@@ -497,9 +618,10 @@ struct PhotosToWatchView: View {
                     HStack { Text("Choose a photo"); Spacer(); if hub.photoBusy { ProgressView() } }
                 }
             } footer: {
-                Text("Photos are resized for the watch and appear in its Gallery app, in the Galaxy Bridge album. Bluetooth is slow, so each takes a few seconds.")
+                Text("Photos are resized for the watch and appear in its Gallery app, in the Wear OS Bridge album. Bluetooth is slow, so each takes a few seconds.")
             }
         }
+        .auroraScreen()
         .navigationTitle("Photos")
         .onChange(of: item) { _, new in
             guard let new else { return }
@@ -537,6 +659,7 @@ struct RecordingsView: View {
                 .disabled(hub.downloading != nil)
             }
         }
+        .auroraScreen()
         .navigationTitle("Voice recordings")
         .refreshable { hub.requestRecordings() }
         .onAppear { hub.requestRecordings() }
@@ -549,12 +672,13 @@ struct WorkoutsInfoView: View {
     var body: some View {
         Form {
             Section {
-                Label("On the watch, open Galaxy Bridge → Workout and pick Run, Walk, Cycle, Hike or Workout.", systemImage: "1.circle")
+                Label("On the watch, open Wear OS Bridge → Workout and pick Run, Walk, Cycle, Hike or Workout.", systemImage: "1.circle")
                 Label("Tap End when you finish. The workout and its GPS route go to Apple Health the next time the watch connects.", systemImage: "2.circle")
             }
             if let last = health.lastWorkout { Section("Last saved") { Text(last) } }
             Section { Button("Allow workouts in Apple Health") { Task { await health.requestAccess() } } }
         }
+        .auroraScreen()
         .navigationTitle("Workouts")
     }
 }
@@ -572,6 +696,7 @@ struct TilesInfoView: View {
                 Text("On the watch, swipe left from the watch face to the end of your tiles, tap +, and add any of these.")
             }
         }
+        .auroraScreen()
         .navigationTitle("Tiles")
     }
 }
