@@ -20,6 +20,7 @@ object Health {
         DataType.STEPS,
         DataType.CALORIES,
         DataType.DISTANCE,
+        DataType.FLOORS,
     )
 
     /** Registers background delivery; Health Services keeps it across restarts of our app. */
@@ -50,6 +51,7 @@ object Health {
         interval(data.getData(DataType.STEPS), SampleKind.STEPS) { it.toDouble() }
         interval(data.getData(DataType.CALORIES), SampleKind.ACTIVE_ENERGY) { it }
         interval(data.getData(DataType.DISTANCE), SampleKind.DISTANCE) { it }
+        interval(data.getData(DataType.FLOORS), SampleKind.FLOORS) { it }
         return out.filter { it.isPlausible() }
     }
 }

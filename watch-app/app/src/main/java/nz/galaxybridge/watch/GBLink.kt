@@ -83,6 +83,7 @@ enum class SampleKind(val wire: String, val range: ClosedFloatingPointRange<Doub
     STEPS("steps", 0.0..50_000.0),
     ACTIVE_ENERGY("kcal", 0.0..5_000.0),
     DISTANCE("dist", 0.0..100_000.0),
+    FLOORS("floors", 0.0..500.0),
 }
 
 data class HealthSample(val kind: SampleKind, val startMs: Long, val endMs: Long, val value: Double) {
@@ -108,6 +109,8 @@ sealed class PhoneMessage {
                        val code: Int, val at: Long) : PhoneMessage()
     data class Events(val items: List<Event>) : PhoneMessage()
     data class Event(val title: String, val start: Long, val end: Long, val allDay: Boolean)
+    /** A feature message; [Features] validates its fields. */
+    data class Raw(val type: String, val json: JSONObject) : PhoneMessage()
 
     companion object {
         fun decode(bytes: ByteArray): PhoneMessage? {
@@ -162,6 +165,7 @@ sealed class PhoneMessage {
                     }
                     Events(items)
                 }
+                in Features.FROM_PHONE -> Raw(json.optString("t"), json)
                 else -> null
             }
         }
@@ -188,6 +192,8 @@ object WatchMessages {
     fun findPhone(on: Boolean): ByteArray = JSONObject().put("t", "find").put("on", on).bytes()
 
     fun status(info: JSONObject): ByteArray = info.put("t", "status").bytes()
+
+    fun feature(type: String, body: JSONObject = JSONObject()): ByteArray = body.put("t", type).bytes()
 
     private fun JSONObject.bytes() = toString().toByteArray(Charsets.UTF_8)
 }

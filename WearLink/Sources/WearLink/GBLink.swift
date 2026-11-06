@@ -229,6 +229,9 @@ public enum GBMessage: Equatable {
     case phoneBattery(percent: Int, charging: Bool)
     case weather(WeatherReport)
     case events([CalendarItem])
+    /// Feature messages (contacts, apps, tiles, files, workouts…), already JSON with a "t" key.
+    /// Each feature validates its own fields; see `GBFeature` for the accepted types.
+    case raw(type: String, json: Data)
 
     private struct Envelope: Codable {
         var t: String
@@ -271,6 +274,7 @@ public enum GBMessage: Equatable {
     public func encoded() throws -> Data {
         var e: Envelope
         switch self {
+        case let .raw(_, json): return json
         case let .hello(v, app):
             e = Envelope(t: "hello"); e.v = v; e.app = app
             // Lets the watch notice if its clock or time zone is wrong.
@@ -312,6 +316,9 @@ public enum GBMessage: Equatable {
     /// reach HealthKit) so the rest of the batch can still be stored and acknowledged.
     public static func decode(_ data: Data, now: Date = Date()) throws -> GBMessage {
         guard data.count <= GBLink.maxMessageBytes else { throw Invalid.outOfRange("size") }
+        struct Kind: Decodable { var t: String }
+        let kind = try JSONDecoder().decode(Kind.self, from: data).t
+        if GBFeature.fromWatch.contains(kind) { return .raw(type: kind, json: data) }
         let e = try JSONDecoder().decode(Envelope.self, from: data)
         switch e.t {
         case "hello":
@@ -404,5 +411,28 @@ public struct GBAdvert: Equatable {
         // Untrusted text from the air: decode leniently and keep only printable characters.
         name = String(decoding: bytes[2...], as: UTF8.self)
             .filter { !$0.isNewline && $0.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } }
+    }
+}
+
+/// Message types for the feature set added on top of the core link.
+public enum GBFeature {
+    /// Watch → phone.
+    public static let fromWatch: Set<String> = [
+        "notifApps", "apps", "sounds", "recordings", "recPart", "workout", "reminderDone",
+        "camCmd", "camView", "result",
+    ]
+    /// Phone → watch (must match Features.FROM_PHONE in the watch app).
+    public static let toWatch: Set<String> = [
+        "contacts", "mute", "reminders", "alarm", "timer", "uninstall", "openStore", "launch",
+        "getApps", "getSounds", "setSound", "photo", "getRecordings", "getRecording", "workoutAck",
+        "camFrame", "camState", "getNotifApps",
+    ]
+
+    public static func message(_ type: String, _ body: [String: Any] = [:]) -> GBMessage? {
+        precondition(toWatch.contains(type), "unknown feature message \(type)")
+        var b = body
+        b["t"] = type
+        guard let data = try? JSONSerialization.data(withJSONObject: b) else { return nil }
+        return .raw(type: type, json: data)
     }
 }

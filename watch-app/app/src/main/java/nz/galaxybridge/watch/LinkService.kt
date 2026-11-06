@@ -137,6 +137,16 @@ class LinkService : Service() {
 
         fun media(command: Int) = instance?.apple?.media(command)
 
+        /** Sends a feature message if the iPhone is connected. Returns false otherwise. */
+        fun sendFeature(type: String, body: org.json.JSONObject = org.json.JSONObject()): Boolean {
+            val s = instance ?: return false
+            if (s.phone == null || !s.subscribed) return false
+            s.send(WatchMessages.feature(type, body))
+            return true
+        }
+
+        fun connected() = instance?.let { it.phone != null && it.subscribed } == true
+
         fun findPhone(on: Boolean) {
             val s = instance ?: return
             findingPhone.value = on && status.value == Status.CONNECTED
@@ -182,9 +192,11 @@ class LinkService : Service() {
         hid = HidShutter(this) { getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TRUSTED, null) }
         hid.start()
         notifier = PhoneNotifier(this)
-        apple = AppleClient(this, onNotification = notifier::post, onRemoved = notifier::remove)
+        apple = AppleClient(this,
+            onNotification = { e, d, app -> if (Features.allowNotification(this, e, d, app)) notifier.post(e, d, app) },
+            onRemoved = notifier::remove)
         media = MediaBridge(this) { apple.media(it) }
-        AppleClient.nowPlaying.onEach { media.update(it) }.launchIn(scope)
+        AppleClient.nowPlaying.onEach { media.update(it); Tiles.refresh(this) }.launchIn(scope)
         WatchSettings.changes.onEach { media.update(AppleClient.nowPlaying.value); sendStatus() }.launchIn(scope)
         AppleClient.connected.onEach { sendStatus() }.launchIn(scope)
         trustedDevice()?.let { apple.connect(it) }
@@ -379,6 +391,7 @@ class LinkService : Service() {
                 send(WatchMessages.battery(batteryPercent()))
                 flushQueue()
                 sendStatus()
+                Workouts.flush(this@LinkService)
                 if (device.bondState == BluetoothDevice.BOND_BONDED) {
                     hid.connectToPhone()
                     apple.connect(device)
@@ -421,9 +434,10 @@ class LinkService : Service() {
                 // A refused change (permission not granted) still replies, so the phone shows the real value.
                 is PhoneMessage.Set -> if (!WatchSettings.set(this@LinkService, m.key, m.value)) sendStatus()
                 PhoneMessage.GetStatus -> sendStatus()
-                is PhoneMessage.PhoneBattery -> { phoneBattery.value = m; PhoneInfo.save(this@LinkService, m) }
-                is PhoneMessage.Weather -> { weather.value = m; PhoneInfo.save(this@LinkService, m) }
-                is PhoneMessage.Events -> { events.value = m.items; PhoneInfo.save(this@LinkService, m) }
+                is PhoneMessage.PhoneBattery -> { phoneBattery.value = m; PhoneInfo.save(this@LinkService, m); Tiles.refresh(this@LinkService) }
+                is PhoneMessage.Weather -> { weather.value = m; PhoneInfo.save(this@LinkService, m); Tiles.refresh(this@LinkService) }
+                is PhoneMessage.Events -> { events.value = m.items; PhoneInfo.save(this@LinkService, m); Tiles.refresh(this@LinkService) }
+                is PhoneMessage.Raw -> Features.handle(this@LinkService, m.type, m.json)
                 null -> Log.w(TAG, "rejected message from phone")
             }
         }

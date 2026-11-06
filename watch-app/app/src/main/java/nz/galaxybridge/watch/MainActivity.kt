@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
         const val PAGE_CAMERA = 2
         const val PAGE_FIND = 3
         const val PAGE_SETTINGS = 4
+        const val PAGE_WORKOUT = 5
     }
 
     private val permissions = arrayOf(
@@ -93,6 +95,10 @@ class MainActivity : ComponentActivity() {
         Manifest.permission.BODY_SENSORS,
         Manifest.permission.ACTIVITY_RECOGNITION,
         Manifest.permission.POST_NOTIFICATIONS,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.READ_CONTACTS,
+        Manifest.permission.WRITE_CONTACTS,
+        Manifest.permission.READ_MEDIA_AUDIO,
     )
 
     private val request = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -154,6 +160,7 @@ class MainActivity : ComponentActivity() {
                     PAGE_CAMERA -> cameraPage()
                     PAGE_FIND -> findPage()
                     PAGE_SETTINGS -> settingsPage()
+                    PAGE_WORKOUT -> workoutPage()
                     else -> homePage()
                 }
             }
@@ -169,6 +176,7 @@ class MainActivity : ComponentActivity() {
         item { PhoneSummary() }
         item { WeatherCard() }
         item { AgendaCard() }
+        item { NavChip("Workout", "Run, walk, cycle with GPS", Good) { page = PAGE_WORKOUT } }
         item { NavChip("Music", "Control iPhone playback", Accent) { page = PAGE_MUSIC } }
         item { NavChip("Camera remote", "Shutter for iPhone camera", Accent2) { page = PAGE_CAMERA } }
         item { NavChip("Find iPhone", "Play a sound on your phone", Wait) { page = PAGE_FIND } }
@@ -320,6 +328,8 @@ class MainActivity : ComponentActivity() {
 
     private fun ScalingLazyListScope.cameraPage() {
         item { ListHeader { Text("Camera remote") } }
+        item { CameraPreviewBox() }
+        item { CameraControls() }
         item {
             val remote by HidShutter.connected.collectAsState()
             val status by LinkService.statusFlow().collectAsState()
@@ -330,6 +340,75 @@ class MainActivity : ComponentActivity() {
             Text(if (remote) "Works in the iPhone Camera app" else "Open the camera in Galaxy Bridge on your iPhone",
                 style = MaterialTheme.typography.caption3, color = Dim, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 20.dp))
+        }
+    }
+
+    @Composable
+    private fun CameraPreviewBox() {
+        val frame by CameraRemote.frame.collectAsState()
+        val open by CameraRemote.open.collectAsState()
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            CameraRemote.view(true)
+            onDispose { CameraRemote.view(false) }
+        }
+        val bmp = frame
+        if (bmp != null) {
+            androidx.compose.foundation.Image(bmp.asImageBitmap(), contentDescription = "iPhone camera preview",
+                modifier = Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+        } else if (open) {
+            Text("Loading preview…", style = MaterialTheme.typography.caption3, color = Dim)
+        }
+    }
+
+    @Composable
+    private fun CameraControls() {
+        val open by CameraRemote.open.collectAsState()
+        val timer by CameraRemote.timer.collectAsState()
+        if (!open) return
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SmallRound("⟲") { CameraRemote.command("flip") }
+            SmallRound(if (timer == 0) "⏱" else "${timer}s") { CameraRemote.command("timer") }
+        }
+    }
+
+    // --- Workout ---
+
+    private fun ScalingLazyListScope.workoutPage() {
+        item { ListHeader { Text("Workout") } }
+        item { WorkoutPanel() }
+    }
+
+    @Composable
+    private fun WorkoutPanel() {
+        val live by Workouts.live.collectAsState()
+        var error by remember { mutableStateOf<String?>(null) }
+        val current = live
+        if (current == null) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (k in Workouts.Kind.entries) Chip(
+                    onClick = { lifecycleScope.launch { error = Workouts.start(this@MainActivity, k) } },
+                    label = { Text(k.label) },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(it, style = MaterialTheme.typography.caption3, color = Wait, textAlign = TextAlign.Center) }
+                Text("Saved to Apple Health with your route", style = MaterialTheme.typography.caption3, color = Dim,
+                    textAlign = TextAlign.Center)
+            }
+            return
+        }
+        var now by remember { mutableStateOf(android.os.SystemClock.elapsedRealtime()) }
+        LaunchedEffect(Unit) { while (true) { delay(1000); now = android.os.SystemClock.elapsedRealtime() } }
+        val secs = (now - Workouts.startedAt) / 1000
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(current.kind.label + if (current.gps) " · GPS" else "", style = MaterialTheme.typography.caption2, color = Good)
+            Text("%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60), fontSize = 28.sp,
+                fontWeight = FontWeight.Bold, color = Color.White)
+            Text("♥ ${current.hr.toInt().takeIf { it > 0 } ?: "--"}   ${"%.2f".format(current.distM / 1000)} km   ${current.kcal.toInt()} kcal",
+                style = MaterialTheme.typography.caption2, color = Color.White)
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { lifecycleScope.launch { Workouts.stop(this@MainActivity) } },
+                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFE5484D))) { Text("End") }
         }
     }
 
@@ -531,7 +610,7 @@ private fun SmallRound(symbol: String, onClick: () -> Unit) {
 }
 
 /** WMO weather code (as sent by the iPhone app) to a symbol. */
-private fun weatherSymbol(code: Int) = when (code) {
+internal fun weatherSymbol(code: Int) = when (code) {
     0 -> "☀️"
     1, 2 -> "⛅"
     3 -> "☁️"
