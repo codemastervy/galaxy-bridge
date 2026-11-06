@@ -1,0 +1,12 @@
+<!-- Preview of the Wear OS Bridge face in the watch's face picker. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="240dp" android:height="240dp"
+    android:viewportWidth="240" android:viewportHeight="240">
+    <path android:fillColor="#FF0B0D24" android:pathData="M120,0a120,120 0,1 1,0 240a120,120 0,1 1,0 -240z"/>
+    <path android:strokeColor="#FF2ED1DB" android:strokeWidth="8" android:strokeLineCap="round"
+        android:pathData="M120,12a108,108 0,1 1,-108 108"/>
+    <path android:strokeColor="#33FFFFFF" android:strokeWidth="8" android:pathData="M12,120a108,108 0,0 1,108 -108"/>
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="9" android:strokeLineCap="round" android:pathData="M120,120L120,62"/>
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M120,120L188,120"/>
+    <path android:strokeColor="#FF7C88FF" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M120,140L84,58"/>
+    <path android:fillColor="#FF2ED1DB" android:pathData="M120,112a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z"/>
+</vector>

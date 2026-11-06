@@ -48,6 +48,7 @@ private struct HomeView: View {
     @EnvironmentObject var hub: FeatureHub
     @Binding var tab: Int
     @State private var showCamera = false
+    @State private var showGallery = false
     @State private var confirmForget = false
 
     private var connected: Bool { link.status == .connected }
@@ -65,7 +66,7 @@ private struct HomeView: View {
                               color: .orange, active: link.findingWatch) { link.findWatch(!link.findingWatch) }
                         .disabled(!connected).opacity(connected ? 1 : 0.4)
                     OrbButton(title: "Camera", symbol: "camera.fill", color: Theme.accent2) { showCamera = true }
-                    OrbButton(title: "Faces", symbol: "paintpalette.fill", color: Theme.accent3) { tab = 2 }
+                    OrbButton(title: "Faces", symbol: "sparkles", color: Theme.accent3) { showGallery = true }
                     OrbButton(title: "DND", symbol: "moon.fill", color: Theme.accent,
                               active: link.watchStatus?.settings[WatchSetting.doNotDisturb.rawValue] == 1) {
                         let on = link.watchStatus?.settings[WatchSetting.doNotDisturb.rawValue] == 1
@@ -108,6 +109,7 @@ private struct HomeView: View {
         .background(AuroraBackground())
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(isPresented: $showCamera) { CameraScreen() }
+        .navigationDestination(isPresented: $showGallery) { FaceGalleryView() }
         .toast($hub.toast)
     }
 

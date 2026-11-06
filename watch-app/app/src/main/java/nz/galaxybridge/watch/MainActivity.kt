@@ -14,6 +14,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +67,6 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.ListHeader
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.PositionIndicator
 import androidx.wear.compose.material.Scaffold
@@ -86,6 +86,26 @@ private val Accent2 = Color(0xFF2ED1DB)
 private val Good = Color(0xFF3DDC84)
 private val Wait = Color(0xFFFFC542)
 private val Dim = Color.White.copy(alpha = 0.6f)
+
+/** Brand colours, so chips, toggles and buttons on every page match the home screen. */
+private val BridgeColors = androidx.wear.compose.material.Colors(
+    primary = Color(0xFF7C88FF), primaryVariant = Accent, secondary = Accent2, secondaryVariant = Color(0xFF1E8C95),
+    surface = Color(0xFF1C2046), onSurface = Color.White, onSurfaceVariant = Color(0xFFB7BCE0),
+    onPrimary = Color.White, onSecondary = Color(0xFF00262A), background = Color.Black, error = Color(0xFFFF6B6B),
+)
+
+/** Page title: small, spaced, brand-coloured. */
+@Composable
+private fun PageTitle(text: String) {
+    Text(text.uppercase(), fontSize = 11.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold, color = Accent2,
+        textAlign = TextAlign.Center, modifier = Modifier.padding(top = 22.dp, bottom = 4.dp))
+}
+
+/** Section header inside a page. */
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Dim, modifier = Modifier.padding(top = 8.dp))
+}
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -119,7 +139,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         page = intent.getIntExtra(EXTRA_PAGE, PAGE_HOME)
-        setContent { MaterialTheme { Screen() } }
+        setContent { MaterialTheme(colors = BridgeColors) { Screen() } }
         if (missing().isEmpty()) startIfAllowed() else request.launch(missing().toTypedArray())
     }
 
@@ -310,7 +330,7 @@ class MainActivity : ComponentActivity() {
     // --- Music ---
 
     private fun ScalingLazyListScope.musicPage() {
-        item { ListHeader { Text("Music") } }
+        item { PageTitle("Music") }
         item { MusicControls() }
     }
 
@@ -344,7 +364,7 @@ class MainActivity : ComponentActivity() {
     // --- Camera ---
 
     private fun ScalingLazyListScope.cameraPage() {
-        item { ListHeader { Text("Camera remote") } }
+        item { PageTitle("Camera remote") }
         item { CameraPreviewBox() }
         item { CameraControls() }
         item {
@@ -392,7 +412,7 @@ class MainActivity : ComponentActivity() {
     // --- Workout ---
 
     private fun ScalingLazyListScope.workoutPage() {
-        item { ListHeader { Text("Workout") } }
+        item { PageTitle("Workout") }
         item { WorkoutPanel() }
     }
 
@@ -403,9 +423,16 @@ class MainActivity : ComponentActivity() {
         val current = live
         if (current == null) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (k in Workouts.Kind.entries) Chip(
+                val tints = listOf(Good, Accent2, Wait, Color(0xFFB04CFF), Color(0xFF8E96B8))
+                for ((i, k) in Workouts.Kind.entries.withIndex()) Chip(
                     onClick = { lifecycleScope.launch { error = Workouts.start(this@MainActivity, k) } },
-                    label = { Text(k.label) },
+                    label = { Text(k.label, fontWeight = FontWeight.SemiBold) },
+                    secondaryLabel = { Text(if (k == Workouts.Kind.OTHER) "Heart rate and calories" else "GPS route, heart rate", maxLines = 1) },
+                    icon = {
+                        Box(Modifier.size(30.dp).clip(CircleShape).background(tints[i]), contentAlignment = Alignment.Center) {
+                            Icon(painterResource(R.drawable.ic_run), contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    },
                     colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth(),
                 )
                 error?.let { Text(it, style = MaterialTheme.typography.caption3, color = Wait, textAlign = TextAlign.Center) }
@@ -432,16 +459,29 @@ class MainActivity : ComponentActivity() {
     // --- Find ---
 
     private fun ScalingLazyListScope.findPage() {
-        item { ListHeader { Text("Find iPhone") } }
+        item { PageTitle("Find iPhone") }
         item {
             val finding by LinkService.findingPhone.collectAsState()
             val status by LinkService.statusFlow().collectAsState()
-            Button(
-                onClick = { LinkService.findPhone(!finding) },
-                enabled = status == LinkService.Status.CONNECTED,
-                modifier = Modifier.size(96.dp),
-                colors = ButtonDefaults.buttonColors(backgroundColor = if (finding) Color(0xFFE5484D) else Wait),
-            ) { Text(if (finding) "Stop" else "Ring", fontWeight = FontWeight.Bold, color = Color.Black) }
+            val ok = status == LinkService.Status.CONNECTED
+            val pulse by rememberInfiniteTransition(label = "ring").animateFloat(
+                1f, 1.12f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "ring")
+            val colors = if (finding) listOf(Color(0xFFFF5A5F), Color(0xFFB0185E)) else listOf(Wait, Color(0xFFFF7A2E))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    Modifier.size(96.dp).scale(if (finding) pulse else 1f).clip(CircleShape)
+                        .background(if (ok) Brush.linearGradient(colors) else Brush.linearGradient(listOf(Color(0xFF3A3F5C), Color(0xFF262A45))))
+                        .clickable(enabled = ok, onClickLabel = if (finding) "Stop" else "Ring") { LinkService.findPhone(!finding) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(painterResource(R.drawable.ic_find), contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+                        Text(if (finding) "Stop" else "Ring", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+                if (!ok) Text("iPhone not connected", style = MaterialTheme.typography.caption3, color = Wait,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
         }
         item {
             Text("Your iPhone plays a sound, even on silent if Wear OS Bridge is allowed to send alerts.",
@@ -453,19 +493,19 @@ class MainActivity : ComponentActivity() {
     // --- Settings ---
 
     private fun ScalingLazyListScope.settingsPage() {
-        item { ListHeader { Text("Settings") } }
+        item { PageTitle("Settings") }
         item { Toggle("iPhone notifications", WatchSettings.NOTIFICATIONS) }
         item { Toggle("Incoming calls", WatchSettings.CALLS) }
         item { Toggle("Clear on iPhone too", WatchSettings.CLEAR_ON_IPHONE) }
         item { Toggle("Music controls", WatchSettings.MUSIC) }
-        item { ListHeader { Text("Apple Health sync") } }
+        item { SectionLabel("Apple Health sync") }
         item { Toggle("Heart rate", WatchSettings.SYNC_HEART) }
         item { Toggle("Steps", WatchSettings.SYNC_STEPS) }
         item { Toggle("Active energy", WatchSettings.SYNC_ENERGY) }
         item { Toggle("Distance", WatchSettings.SYNC_DISTANCE) }
-        item { ListHeader { Text("Let iPhone change") } }
+        item { SectionLabel("Let iPhone change") }
         item { PermissionChips() }
-        item { ListHeader { Text("Phone") } }
+        item { SectionLabel("Phone") }
         item { PhoneChips() }
         item { AboutText() }
     }
@@ -577,20 +617,27 @@ private fun HeroRing() {
     val level by animateFloatAsState((battery?.percent ?: 0) / 100f, label = "level")
     val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
         0.35f, 0.8f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "glow")
-    val glow = if (connected) Accent2 else Wait
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(top = 18.dp).size(132.dp)) {
+    val glow = if (connected) Accent2 else Accent
+    val spin by rememberInfiniteTransition(label = "spin").animateFloat(
+        0f, 360f, infiniteRepeatable(tween(2400, easing = androidx.compose.animation.core.LinearEasing)), label = "spin")
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(top = 26.dp).size(118.dp)) {
         Canvas(Modifier.fillMaxSize()) {
-            val w = 9.dp.toPx()
-            drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = 0.28f * pulse), Color.Transparent)))
+            val w = 7.dp.toPx()
+            drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = 0.30f * pulse), Color.Transparent)))
             drawArc(Color.White.copy(alpha = 0.10f), 0f, 360f, false, style = Stroke(w))
+            if (!connected) drawArc(Brush.sweepGradient(listOf(Color.Transparent, Accent, Accent2)),
+                spin, 110f, false, style = Stroke(w, cap = StrokeCap.Round))
             if (connected && battery != null) drawArc(
                 Brush.sweepGradient(listOf(Accent2, Accent, Color(0xFFB04CFF), Accent2)),
                 -90f, 360f * level, false, style = Stroke(w, cap = StrokeCap.Round))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("WEAR OS BRIDGE", fontSize = 8.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold, color = Accent2)
-            Text(if (connected) battery?.let { "${it.percent}%" } ?: "—" else "—",
-                fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("WEAR OS BRIDGE", fontSize = 7.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold, color = Accent2)
+            val pct = battery?.percent
+            if (connected && pct != null) Text("$pct%", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            else Icon(painterResource(R.drawable.ic_stat_iphone), contentDescription = null, tint = Color.White,
+                modifier = Modifier.padding(vertical = 4.dp).size(26.dp))
             Text(if (battery?.charging == true && connected) "iPhone ⚡" else "iPhone",
                 style = MaterialTheme.typography.caption3, color = Dim)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp)) {
@@ -605,19 +652,18 @@ private fun HeroRing() {
         }
     }
     if (pending > 0) Text(if (connected) "Syncing $pending to Health" else "$pending waiting for iPhone",
-        style = MaterialTheme.typography.caption3, color = Accent2)
+        style = MaterialTheme.typography.caption3, color = Accent2, modifier = Modifier.padding(top = 4.dp))
+    }
 }
 
 /** Round gradient launcher with a caption. */
 @Composable
 private fun Launcher(icon: Int, label: String, from: Color, to: Color, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Button(onClick = onClick, modifier = Modifier.size(48.dp),
-            colors = ButtonDefaults.buttonColors(backgroundColor = Color.Transparent)) {
-            Box(Modifier.fillMaxSize().clip(CircleShape).background(Brush.linearGradient(listOf(from, to))),
-                contentAlignment = Alignment.Center) {
-                Icon(painterResource(icon), contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
-            }
+        Box(Modifier.size(48.dp).clip(CircleShape).background(Brush.linearGradient(listOf(from, to)))
+            .clickable(onClickLabel = label, onClick = onClick),
+            contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
         }
         Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(top = 2.dp))
     }

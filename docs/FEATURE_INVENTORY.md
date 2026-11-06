@@ -5,6 +5,18 @@ settings); watch APKs pulled earlier; live adb/Bluetooth work from earlier sessi
 on adb and the Samsung SDK was not on the Mac when this was written, so items marked
 *needs hardware check* or *needs SDK* are unverified.
 
+> **Update, 7 November 2026 (v1.0.0):** the item-by-item statuses below predate this release. Since
+> then these have been built and confirmed on the watch and iPhone: call answering with call audio
+> on the watch, outgoing calls through HFP, contacts copied to the watch, notification filters,
+> reminders, alarms and timers, watch apps (list, open, uninstall), Google Play inside the iPhone
+> app with Install on watch, ringtones and notification sounds, photos to the watch, voice
+> recordings from the watch, workouts with GPS routes into Apple Health, five tiles, the camera
+> remote with live preview, display/gesture/mode settings, and the active watch face shown on
+> the iPhone. New in 1.0.0: the Wear OS Bridge watch face with a 320-design gallery in the iPhone
+> app. Still not possible: SMS from the watch (no MAP client on the watch), SpO2/ECG/BIA (Samsung
+> signature permission), switching faces without the watch's picker, and native pairing of a reset
+> watch. See the README for the current feature list.
+
 **Status key:** ✅ demonstrated on your watch and iPhone · 🧪 built and unit-tested, not yet seen on
 hardware · ⬜ not built
 

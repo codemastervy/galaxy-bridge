@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="com.google.android.permission.PROVIDE_BACKGROUND" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -29,6 +31,10 @@
     <!-- Granted once over adb on a sideloaded watch; the app works without them. -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- Granted over adb; used only to read which watch face the face runtime is showing. -->
+    <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions" />
+    <!-- Watch faces have no launcher entry, so listing them needs to see all packages. Sideloaded app, not on Play. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
 
     <queries>
         <intent>
@@ -89,6 +95,35 @@
                 <action android:name="hs.passivemonitoring.PASSIVE_DATA" />
             </intent-filter>
         </service>
+
+        <!-- The Wear OS Bridge watch face: draws the design picked in the iPhone app's gallery. -->
+        <service
+            android:name=".face.BridgeFaceService"
+            android:exported="true"
+            android:label="Wear OS Bridge"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+                <category android:name="com.google.android.wearable.watchface.category.WATCH_FACE" />
+            </intent-filter>
+            <meta-data android:name="com.google.android.wearable.watchface.preview" android:resource="@drawable/face_preview" />
+            <meta-data android:name="com.google.android.wearable.watchface.preview_circular" android:resource="@drawable/face_preview" />
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/watch_face" />
+            <meta-data android:name="com.google.android.wearable.watchface.wearableConfigurationAction"
+                android:value="androidx.wear.watchface.editor.action.WATCH_FACE_EDITOR" />
+        </service>
+
+        <activity
+            android:name=".face.FaceEditorActivity"
+            android:exported="true"
+            android:label="Wear OS Bridge face"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="androidx.wear.watchface.editor.action.WATCH_FACE_EDITOR" />
+                <category android:name="com.google.android.wearable.watchface.category.WEARABLE_CONFIGURATION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".PhoneBatteryComplication"

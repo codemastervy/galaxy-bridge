@@ -25,7 +25,7 @@ object Features {
     val FROM_PHONE = setOf(
         "contacts", "mute", "reminders", "alarm", "timer", "uninstall", "openStore", "launch",
         "getApps", "getSounds", "setSound", "photo", "getRecordings", "getRecording", "workoutAck",
-        "camFrame", "camState", "getNotifApps", "getFace", "getFaces", "openFacePicker",
+        "camFrame", "camState", "getNotifApps", "getFace", "getFaces", "openFacePicker", "setDesign", "getDesign",
     )
 
     private val PACKAGE = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+$")
@@ -51,8 +51,14 @@ object Features {
                 "workoutAck" -> Workouts.ack(s, j.optString("id"))
                 "camFrame" -> CameraRemote.frame(j)
                 "camState" -> CameraRemote.state(j)
-                "getFace" -> s.send(WatchMessages.feature("face", WatchFaces.describeActive(s)))
-                "getFaces" -> s.send(WatchMessages.feature("faces", JSONObject().put("items", WatchFaces.list(s))))
+                "getFace" -> WatchFaces.sendNow(s)
+                "getFaces" -> Thread {
+                    val items = WatchFaces.list(s)
+                    s.send(WatchMessages.feature("faces", JSONObject().put("items", items)))
+                    WatchFaces.sendPreviews(s, items)
+                }.start()
+                "setDesign" -> WatchFaces.setDesign(s, j)
+                "getDesign" -> s.send(WatchMessages.feature("design", WatchFaces.designState(s)))
                 "openFacePicker" -> result(s, "facePicker", WatchFaces.openPicker(s), "Choose a face on your watch")
             }
         }.onFailure { Log.w(TAG, "feature $type failed", it) }

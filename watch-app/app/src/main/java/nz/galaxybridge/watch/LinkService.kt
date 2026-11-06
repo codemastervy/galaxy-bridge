@@ -202,7 +202,7 @@ class LinkService : Service() {
         trustedDevice()?.let { apple.connect(it) }
         registerReceiver(bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
         @Suppress("DEPRECATION")
-        registerReceiver(faceReceiver, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
+        registerReceiver(faceReceiver, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED).apply { addAction(Intent.ACTION_SCREEN_ON) })
         status.value = Status.WAITING
     }
 
@@ -336,7 +336,8 @@ class LinkService : Service() {
     /** Tells the iPhone when the watch face changes, so its picture of the watch matches. */
     private val faceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            handler.postDelayed({ sendFeature("face", WatchFaces.describeActive(this@LinkService)) }, 1500)
+            val force = intent.action == Intent.ACTION_WALLPAPER_CHANGED
+            handler.postDelayed({ WatchFaces.sendIfChanged(this@LinkService, force) }, 1500)
         }
     }
 

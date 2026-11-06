@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,14 +14,27 @@ android {
         applicationId = "nz.galaxybridge.watch"
         minSdk = 30
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "1.0.0"
+    }
+
+    // Release key lives outside git (tools/signing); without it the release build is unsigned.
+    val signingProps = rootProject.file("../tools/signing/keystore.properties")
+    signingConfigs {
+        if (signingProps.exists()) create("release") {
+            val p = Properties().apply { signingProps.inputStream().use { load(it) } }
+            storeFile = file(p.getProperty("storeFile"))
+            storePassword = p.getProperty("storePassword")
+            keyAlias = p.getProperty("keyAlias")
+            keyPassword = p.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -46,6 +61,9 @@ dependencies {
     implementation("androidx.wear.compose:compose-foundation:1.4.0")
     implementation("androidx.health:health-services-client:1.1.0-alpha05")
     implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
+    implementation("androidx.wear.watchface:watchface:1.2.1")
+    implementation("androidx.wear.watchface:watchface-complications-rendering:1.2.1")
+    implementation("androidx.wear.watchface:watchface-editor:1.2.1")
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
     implementation("androidx.wear.tiles:tiles:1.4.1")
     implementation("androidx.wear.protolayout:protolayout:1.2.1")

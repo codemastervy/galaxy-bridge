@@ -21,6 +21,10 @@ final class FeatureHub: ObservableObject {
     @Published private(set) var faceImage: UIImage? = FeatureHub.loadFace()
     @Published private(set) var faceName: String? = UserDefaults.standard.string(forKey: "faceName")
     @Published private(set) var faces: [WatchFace] = []
+    @Published private(set) var facePreviews: [String: UIImage] = [:]
+    /// The design on the Wear OS Bridge face, and whether that face is the active one.
+    @Published private(set) var design: FaceDesign? = (UserDefaults.standard.data(forKey: "design")).flatMap { try? JSONDecoder().decode(FaceDesign.self, from: $0) }
+    @Published private(set) var designActive = UserDefaults.standard.bool(forKey: "designActive")
     struct WatchFace: Identifiable, Equatable { let id: String; let name: String; let active: Bool }
     @Published private(set) var notifApps: [NotifApp] = []
     @Published private(set) var categories: [Int: Bool] = [:]
@@ -146,6 +150,17 @@ final class FeatureHub: ObservableObject {
                 guard let id = $0["pkg"] as? String, id.count <= 200 else { return nil }
                 return WatchFace(id: id, name: String(($0["name"] as? String ?? id).prefix(50)), active: $0["active"] as? Bool ?? false)
             }
+        case "facePreview":
+            if let pkg = b["pkg"] as? String, pkg.count <= 200, facePreviews.count < 300,
+               let data = (b["img"] as? String).flatMap({ Data(base64Encoded: $0) }), data.count < 30_000,
+               let img = UIImage(data: data) { facePreviews[pkg] = img }
+        case "design":
+            designActive = b["active"] as? Bool ?? false
+            UserDefaults.standard.set(designActive, forKey: "designActive")
+            if let d = (b["design"] as? [String: Any]).flatMap(FaceDesign.init(json:)) {
+                design = d
+                UserDefaults.standard.set(try? JSONEncoder().encode(d), forKey: "design")
+            }
         case "result":
             let what = b["what"] as? String ?? ""
             let ok = b["ok"] as? Bool ?? false
@@ -169,6 +184,11 @@ final class FeatureHub: ObservableObject {
     func requestFaces() { post("getFaces") }
     func requestFace() { post("getFace") }
     func openFacePicker() { post("openFacePicker") }
+    func requestDesign() { post("getDesign") }
+    func setDesign(_ d: FaceDesign) {
+        design = d
+        post("setDesign", d.json)
+    }
 
     // MARK: Contacts
 
@@ -359,7 +379,8 @@ struct MoreView: View {
     private var groups: [(String, [Item])] {
         [
             ("Customise", [
-                Item(title: "Watch faces", sub: "Current face, installed, picker", symbol: "paintpalette.fill", color: .pink, dest: AnyView(WatchFacesView())),
+                Item(title: "Face gallery", sub: "320 free faces", symbol: "sparkles", color: .pink, dest: AnyView(FaceGalleryView())),
+                Item(title: "Watch faces", sub: "On your watch now", symbol: "paintpalette.fill", color: .orange, dest: AnyView(WatchFacesView())),
                 Item(title: "Google Play", sub: "Faces and apps", symbol: "bag.fill", color: .green, dest: AnyView(StoreScreen())),
                 Item(title: "Watch apps", sub: "Open or uninstall", symbol: "square.grid.2x2.fill", color: .blue, dest: AnyView(AppsView())),
                 Item(title: "Tiles", sub: "Swipe from the face", symbol: "rectangle.stack.fill", color: .teal, dest: AnyView(TilesInfoView())),
@@ -432,6 +453,25 @@ struct WatchFacesView: View {
                 .buttonStyle(.borderedProminent).controlSize(.large).tint(Theme.accent)
                 .disabled(link.status != .connected)
 
+                NavigationLink { FaceGalleryView() } label: {
+                    HStack(spacing: 14) {
+                        HStack(spacing: -14) {
+                            ForEach([FaceCatalog.all[0], FaceCatalog.all[81], FaceCatalog.all[163], FaceCatalog.all[250]]) {
+                                FaceRender(design: $0, showComplications: false).frame(width: 40, height: 40)
+                                    .overlay(Circle().strokeBorder(.black, lineWidth: 2))
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Face gallery").font(.headline).foregroundStyle(.white)
+                            Text("320 free faces by Wear OS Bridge").font(.caption).foregroundStyle(.white.opacity(0.6))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.4))
+                    }
+                    .padding(14).card(cornerRadius: 20)
+                }
+                .buttonStyle(PressScale())
+
                 SectionTitle(text: "Installed")
                 VStack(spacing: 0) {
                     if hub.faces.isEmpty {
@@ -440,8 +480,15 @@ struct WatchFacesView: View {
                     }
                     ForEach(hub.faces) { f in
                         HStack(spacing: 12) {
-                            Image(systemName: f.active ? "checkmark.circle.fill" : "circle.dashed")
-                                .foregroundStyle(f.active ? Theme.accent2 : .white.opacity(0.4))
+                            Group {
+                                if let img = hub.facePreviews[f.id] {
+                                    Image(uiImage: img).resizable().scaledToFill()
+                                } else {
+                                    Image(systemName: "applewatch").foregroundStyle(.white.opacity(0.4))
+                                }
+                            }
+                            .frame(width: 44, height: 44).background(.black).clipShape(Circle())
+                            .overlay(Circle().strokeBorder(f.active ? Theme.accent2 : .white.opacity(0.15), lineWidth: f.active ? 2.5 : 1))
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(f.name).foregroundStyle(.white)
                                 Text(f.id).font(.caption2).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
@@ -450,7 +497,7 @@ struct WatchFacesView: View {
                             if f.active { Text("On watch").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent2) }
                         }
                         .padding(.horizontal, 16).padding(.vertical, 12)
-                        if f.id != hub.faces.last?.id { Divider().padding(.leading, 44) }
+                        if f.id != hub.faces.last?.id { Divider().padding(.leading, 72) }
                     }
                 }
                 .card()
