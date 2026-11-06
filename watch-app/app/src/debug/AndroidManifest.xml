@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: lets adb (which holds DUMP) clear stale iPhone pairing keys. Other apps can't. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver android:name=".DebugReceiver" android:exported="true" android:permission="android.permission.DUMP">
+            <intent-filter><action android:name="nz.galaxybridge.watch.debug.FORGET_IPHONE" /></intent-filter>
+        </receiver>
+    </application>
+</manifest>

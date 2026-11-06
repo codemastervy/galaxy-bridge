@@ -162,11 +162,17 @@ public enum WatchSetting: String, CaseIterable {
     case brightness = "brightness"
     case screenTimeout = "timeout"
     case doNotDisturb = "dnd"
+    case mediaVolume = "vol.media"
+    case ringVolume = "vol.ring"
+    /// 0 sound, 1 vibrate, 2 mute.
+    case soundMode = "sound"
 
     public var range: ClosedRange<Int> {
         switch self {
         case .brightness: return 1...255
         case .screenTimeout: return 5...600
+        case .mediaVolume, .ringVolume: return 0...15
+        case .soundMode: return 0...2
         default: return 0...1
         }
     }

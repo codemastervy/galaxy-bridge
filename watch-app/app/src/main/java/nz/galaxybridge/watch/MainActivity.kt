@@ -428,10 +428,10 @@ class MainActivity : ComponentActivity() {
                 secondaryLabel = { Text("Replaces this iPhone") },
                 colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth(),
             )
-            if (hasPhone) Chip(
+            Chip(
                 onClick = { confirmForget = true },
                 label = { Text("Forget iPhone") },
-                secondaryLabel = { Text("Stops syncing") },
+                secondaryLabel = { Text(if (hasPhone) "Stops syncing" else "Clears old pairings") },
                 colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth(),
             )
         }

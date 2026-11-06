@@ -1,6 +1,7 @@
 package nz.galaxybridge.watch
 
 import android.app.NotificationManager
+import android.media.AudioManager
 import android.content.Context
 import android.os.Build
 import android.os.Environment
@@ -27,6 +28,11 @@ object WatchSettings {
     const val BRIGHTNESS = "brightness"
     const val SCREEN_TIMEOUT = "timeout"
     const val DND = "dnd"
+    /** 0–15, scaled to the watch's own stream range. */
+    const val VOLUME_MEDIA = "vol.media"
+    const val VOLUME_RING = "vol.ring"
+    /** 0 sound, 1 vibrate, 2 mute. */
+    const val SOUND_MODE = "sound"
 
     private val APP_KEYS = mapOf(
         NOTIFICATIONS to 1, CALLS to 1, CLEAR_ON_IPHONE to 1, MUSIC to 1,
@@ -36,6 +42,9 @@ object WatchSettings {
         BRIGHTNESS to 1..255,
         SCREEN_TIMEOUT to 5..600, // seconds
         DND to 0..1,
+        VOLUME_MEDIA to 0..15,
+        VOLUME_RING to 0..15,
+        SOUND_MODE to 0..2,
     )
 
     /** Bumped whenever something changes, so the UI and the phone refresh. */
@@ -77,10 +86,34 @@ object WatchSettings {
                     else NotificationManager.INTERRUPTION_FILTER_ALL)
                 true
             }.getOrDefault(false)
+            VOLUME_MEDIA -> setVolume(c, AudioManager.STREAM_MUSIC, value)
+            VOLUME_RING -> setVolume(c, AudioManager.STREAM_RING, value)
+            // Mute needs Do Not Disturb access; sound and vibrate don't.
+            SOUND_MODE -> (value != 2 || canChangeDnd(c)) && runCatching {
+                c.getSystemService(AudioManager::class.java).ringerMode = when (value) {
+                    0 -> AudioManager.RINGER_MODE_NORMAL
+                    1 -> AudioManager.RINGER_MODE_VIBRATE
+                    else -> AudioManager.RINGER_MODE_SILENT
+                }
+                true
+            }.getOrDefault(false)
             else -> false
         }
         if (ok) changes.value++
         return ok
+    }
+
+    private fun setVolume(c: Context, stream: Int, level: Int) = runCatching {
+        val am = c.getSystemService(AudioManager::class.java)
+        val max = am.getStreamMaxVolume(stream)
+        am.setStreamVolume(stream, (level * max + 7) / 15, 0)
+        true
+    }.getOrDefault(false)
+
+    private fun volume(c: Context, stream: Int): Int {
+        val am = c.getSystemService(AudioManager::class.java)
+        val max = am.getStreamMaxVolume(stream).coerceAtLeast(1)
+        return (am.getStreamVolume(stream) * 15 + max / 2) / max
     }
 
     private fun system(c: Context, name: String, default: Int) =
@@ -93,6 +126,13 @@ object WatchSettings {
         settings.put(BRIGHTNESS, system(c, Settings.System.SCREEN_BRIGHTNESS, 128).coerceIn(1, 255))
         settings.put(SCREEN_TIMEOUT, (system(c, Settings.System.SCREEN_OFF_TIMEOUT, 15_000) / 1000).coerceIn(5, 600))
         val nm = c.getSystemService(NotificationManager::class.java)
+        settings.put(VOLUME_MEDIA, volume(c, AudioManager.STREAM_MUSIC))
+        settings.put(VOLUME_RING, volume(c, AudioManager.STREAM_RING))
+        settings.put(SOUND_MODE, when (c.getSystemService(AudioManager::class.java).ringerMode) {
+            AudioManager.RINGER_MODE_NORMAL -> 0
+            AudioManager.RINGER_MODE_VIBRATE -> 1
+            else -> 2
+        })
         settings.put(DND, if (nm.currentInterruptionFilter > NotificationManager.INTERRUPTION_FILTER_ALL) 1 else 0)
 
         val stat = StatFs(Environment.getDataDirectory().path)

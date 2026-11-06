@@ -71,6 +71,15 @@ struct WatchSettingsView: View {
                 .disabled(!(s?.perms.system ?? false))
                 toggle("Do Not Disturb", .doNotDisturb, symbol: "moon.fill", color: .indigo)
                     .disabled(!(s?.perms.dnd ?? false))
+                Picker(selection: binding(.soundMode, default: 0)) {
+                    Text("Sound").tag(0)
+                    Text("Vibrate").tag(1)
+                    Text("Mute").tag(2)
+                } label: {
+                    Label { Text("Sound mode") } icon: { icon("bell.fill", .red) }
+                }
+                volume("Media volume", .mediaVolume, symbol: "speaker.wave.2.fill")
+                volume("Ring volume", .ringVolume, symbol: "bell.and.waves.left.and.right.fill")
             } header: {
                 Text("Display & sounds")
             } footer: {
@@ -119,6 +128,16 @@ struct WatchSettingsView: View {
 
     private func binding(_ key: WatchSetting, default d: Int) -> Binding<Int> {
         Binding(get: { s?.settings[key.rawValue] ?? d }, set: { link.set(key, $0) })
+    }
+
+    private func volume(_ title: String, _ key: WatchSetting, symbol: String) -> some View {
+        HStack {
+            icon(symbol, .pink)
+            Slider(value: Binding(get: { Double(s?.settings[key.rawValue] ?? 8) },
+                                  set: { link.set(key, Int($0.rounded())) }),
+                   in: 0...15, step: 1) { Text(title) }
+        }
+        .accessibilityLabel(title)
     }
 
     private func toggle(_ title: String, _ key: WatchSetting, symbol: String, color: Color) -> some View {

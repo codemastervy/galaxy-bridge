@@ -87,6 +87,30 @@ class LinkService : Service() {
             context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_TRUSTED).apply()
             hasPhone.value = false
             instance?.apply { apple.close(); notifier.clearAll(); disconnectAll() }
+            removeIPhoneBonds(context)
+        }
+
+        /**
+         * Deletes the watch's Bluetooth keys for any iPhone. Without this, an iPhone that has
+         * forgotten the watch can't pair again: Android refuses a fresh pairing from a device it
+         * still holds keys for. removeBond is a system API, so this may be refused; returns how
+         * many were removed.
+         */
+        @SuppressLint("MissingPermission")
+        fun removeIPhoneBonds(context: Context): Int {
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return 0
+            val apple = "00000000-deca-fade-deca-deafdecacafe"
+            var removed = 0
+            for (d in runCatching { adapter.bondedDevices }.getOrDefault(emptySet())) {
+                val isIPhone = d.name?.contains("iPhone", ignoreCase = true) == true ||
+                    d.uuids?.any { it.toString().equals(apple, ignoreCase = true) } == true
+                if (!isIPhone) continue
+                val ok = runCatching { d.javaClass.getMethod("removeBond").invoke(d) as Boolean }
+                    .onFailure { Log.w(TAG, "removeBond refused", it) }.getOrDefault(false)
+                Log.i(TAG, "removeBond ${d.address.takeLast(5)}: $ok")
+                if (ok) removed++
+            }
+            return removed
         }
 
         fun statusFlow(): StateFlow<Status> = status
