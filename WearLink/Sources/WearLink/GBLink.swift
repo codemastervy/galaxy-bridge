@@ -438,13 +438,13 @@ public enum GBFeature {
     /// Watch → phone.
     public static let fromWatch: Set<String> = [
         "notifApps", "apps", "sounds", "recordings", "recPart", "workout", "reminderDone",
-        "camCmd", "camView", "result",
+        "camCmd", "camView", "result", "face", "faces",
     ]
     /// Phone → watch (must match Features.FROM_PHONE in the watch app).
     public static let toWatch: Set<String> = [
         "contacts", "mute", "reminders", "alarm", "timer", "uninstall", "openStore", "launch",
         "getApps", "getSounds", "setSound", "photo", "getRecordings", "getRecording", "workoutAck",
-        "camFrame", "camState", "getNotifApps",
+        "camFrame", "camState", "getNotifApps", "getFace", "getFaces", "openFacePicker",
     ]
 
     public static func message(_ type: String, _ body: [String: Any] = [:]) -> GBMessage? {
