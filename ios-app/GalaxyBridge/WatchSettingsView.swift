@@ -35,7 +35,7 @@ struct WatchSettingsView: View {
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("Notifications buzz on the watch with their actions. Calls can be answered or declined from the watch; audio stays on the iPhone.")
+                Text("Notifications buzz on the watch with their actions. Calls can be answered or declined from the watch, and talked on through its speaker and mic.")
             }
 
             Section("Connection") {

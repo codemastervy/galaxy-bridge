@@ -331,7 +331,7 @@ class LinkService : Service() {
                 BluetoothDevice.BOND_BONDED -> {
                     Log.i(TAG, "pairing finished")
                     isTrusted(device)
-                    if (phone == device && subscribed) { hid.connectToPhone(); apple.connect(device) }
+                    if (phone == device && subscribed) { hid.connectToPhone(); apple.connect(device); CallAudio.connect(this@LinkService, device) }
                 }
                 BluetoothDevice.BOND_NONE -> {
                     Log.w(TAG, "pairing failed")
@@ -382,6 +382,7 @@ class LinkService : Service() {
                 if (device.bondState == BluetoothDevice.BOND_BONDED) {
                     hid.connectToPhone()
                     apple.connect(device)
+                    CallAudio.connect(this@LinkService, device)
                 }
             }
         }
