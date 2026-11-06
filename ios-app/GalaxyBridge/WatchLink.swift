@@ -48,6 +48,8 @@ final class WatchLink: NSObject, ObservableObject {
     var onSamples: ((String, [HealthSample]) async -> Bool)?
     var onShutter: (() -> Void)?
     var onFindPhone: ((Bool) -> Void)?
+    /// Feature messages from the watch (apps list, recordings, workouts…), as parsed JSON.
+    var onFeature: ((String, [String: Any]) -> Void)?
     /// Called once the link is up so the app can push phone battery, weather and calendar.
     var onConnected: (() -> Void)?
 
@@ -250,6 +252,8 @@ final class WatchLink: NSObject, ObservableObject {
             watchAppVersion = s.app
         case let .find(on):
             onFindPhone?(on)
+        case let .raw(type, json):
+            if let body = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] { onFeature?(type, body) }
         case .ack, .set, .getStatus, .phoneBattery, .weather, .events:
             break // phone → watch only
         }

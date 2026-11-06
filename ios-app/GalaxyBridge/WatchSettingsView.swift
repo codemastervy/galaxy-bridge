@@ -80,6 +80,11 @@ struct WatchSettingsView: View {
                 }
                 volume("Media volume", .mediaVolume, symbol: "speaker.wave.2.fill")
                 volume("Ring volume", .ringVolume, symbol: "bell.and.waves.left.and.right.fill")
+                volume("Notification volume", .notifyVolume, symbol: "bell.badge.waveform.fill")
+                volume("Alarm volume", .alarmVolume, symbol: "alarm.fill")
+                NavigationLink { SoundsView() } label: {
+                    Label { Text("Ringtone & notification sound") } icon: { icon("music.note.list", .purple) }
+                }
             } header: {
                 Text("Display & sounds")
             } footer: {
@@ -88,11 +93,42 @@ struct WatchSettingsView: View {
                 }
             }
 
+            Section {
+                toggle("Always-on display", .alwaysOn, symbol: "sun.min.fill", color: .yellow)
+                toggle("Raise wrist to wake", .raiseToWake, symbol: "hand.raised.fill", color: .blue)
+                toggle("Double-tap to wake", .tapToWake, symbol: "hand.tap.fill", color: .blue)
+                toggle("Turn bezel to wake", .bezelWake, symbol: "circle.dashed", color: .blue)
+                toggle("Touch sensitivity (gloves)", .touchSensitivity, symbol: "hand.point.up.left.fill", color: .gray)
+                Picker(selection: binding(.fontSize, default: 1)) {
+                    Text("Small").tag(0); Text("Default").tag(1); Text("Large").tag(2); Text("Larger").tag(3); Text("Largest").tag(4)
+                } label: {
+                    Label { Text("Font size") } icon: { icon("textformat.size", .gray) }
+                }
+            } header: {
+                Text("Display & gestures")
+            } footer: {
+                if s?.perms.secure != true {
+                    Text("Needs a one-time setup over adb (WRITE_SECURE_SETTINGS) on the watch.")
+                }
+            }
+            .disabled(s?.perms.secure != true)
+
+            Section {
+                toggle("Theatre mode", .theatreMode, symbol: "theatermasks.fill", color: .purple)
+                toggle("Bedtime mode", .bedtimeMode, symbol: "bed.double.fill", color: .indigo)
+                toggle("Power saving", .batterySaver, symbol: "battery.25percent", color: .orange)
+                toggle("Water lock", .waterLock, symbol: "drop.fill", color: .cyan)
+            } header: {
+                Text("Modes")
+            }
+            .disabled(s?.perms.secure != true)
+
             Section("Apple Health") {
                 toggle("Heart rate", .syncHeart, symbol: "heart.fill", color: Theme.heart)
                 toggle("Steps", .syncSteps, symbol: "figure.walk", color: Theme.steps)
                 toggle("Active energy", .syncEnergy, symbol: "flame.fill", color: Theme.energy)
                 toggle("Distance", .syncDistance, symbol: "location.north.line.fill", color: Theme.distance)
+                toggle("Floors climbed", .syncFloors, symbol: "figure.stairs", color: .orange)
             }
 
             Section {
@@ -161,6 +197,30 @@ struct WatchSettingsView: View {
 
     private func gb(_ mb: Int) -> String {
         (Double(mb) / 1000).formatted(.number.precision(.fractionLength(1))) + " GB"
+    }
+}
+
+struct SoundsView: View {
+    @EnvironmentObject var hub: FeatureHub
+
+    var body: some View {
+        Form {
+            Section("Ringtone") {
+                ForEach(hub.ringtones) { s in row(s, current: hub.ringNow) { hub.setSound("ring", s.uri) } }
+            }
+            Section("Notification sound") {
+                ForEach(hub.notifSounds) { s in row(s, current: hub.notifNow) { hub.setSound("notif", s.uri) } }
+            }
+        }
+        .overlay { if hub.ringtones.isEmpty { ProgressView() } }
+        .navigationTitle("Sounds")
+        .onAppear { hub.requestSounds() }
+    }
+
+    private func row(_ s: FeatureHub.Sound, current: String, pick: @escaping () -> Void) -> some View {
+        Button(action: pick) {
+            HStack { Text(s.title).foregroundStyle(.primary); Spacer(); if s.uri == current { Image(systemName: "checkmark") } }
+        }
     }
 }
 

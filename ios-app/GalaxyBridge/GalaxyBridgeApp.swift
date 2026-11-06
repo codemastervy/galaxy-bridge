@@ -7,6 +7,7 @@ struct GalaxyBridgeApp: App {
     @StateObject private var health = HealthSync()
     @StateObject private var camera = Camera()
     @StateObject private var phone = PhoneServices()
+    @StateObject private var hub = FeatureHub()
 
     var body: some Scene {
         WindowGroup {
@@ -15,11 +16,19 @@ struct GalaxyBridgeApp: App {
                 .environmentObject(health)
                 .environmentObject(camera)
                 .environmentObject(phone)
+                .environmentObject(hub)
                 .task {
+                    hub.send = { [link] message in link.send(message) }
+                    hub.isConnected = { [link] in link.status == .connected }
+                    hub.health = health
+                    hub.camera = camera
+                    link.onFeature = { [hub] type, body in hub.handle(type, body) }
+                    camera.onFrame = { [hub] jpeg in hub.sendFrame(jpeg) }
+                    camera.onStateChange = { [hub, camera] in camera.updateStreaming(); hub.sendCameraState() }
                     link.onSamples = { [health] id, items in await health.save(batchId: id, items) }
                     link.onShutter = { [camera] in camera.capture() }
                     link.onFindPhone = { [phone] on in phone.findPhone(on) }
-                    link.onConnected = { [phone] in phone.refresh() }
+                    link.onConnected = { [phone, hub] in phone.refresh(); hub.onConnected() }
                     phone.send = { [link] message in link.send(message) }
                 }
         }

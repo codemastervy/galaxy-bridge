@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import HealthKit
 import WearLink
 
@@ -12,6 +13,7 @@ final class HealthSync: ObservableObject {
     @Published private(set) var lastError: String?
     /// Summary for the dashboard only (Apple Health remains the source of truth).
     @Published private(set) var summary = DaySummary.load()
+    @Published var lastWorkout: String?
 
     private let store = HKHealthStore()
 
@@ -21,6 +23,7 @@ final class HealthSync: ObservableObject {
         case .steps: return HKQuantityType(.stepCount)
         case .activeEnergy: return HKQuantityType(.activeEnergyBurned)
         case .distance: return HKQuantityType(.distanceWalkingRunning)
+        case .floors: return HKQuantityType(.flightsClimbed)
         }
     }
 
@@ -30,6 +33,7 @@ final class HealthSync: ObservableObject {
         case .steps: return .count()
         case .activeEnergy: return .kilocalorie()
         case .distance: return .meter()
+        case .floors: return .count()
         }
     }
 
@@ -39,7 +43,9 @@ final class HealthSync: ObservableObject {
             return
         }
         // Write-only: this app never reads anyone's existing health data.
-        let types = Set(SampleKind.allCases.map(Self.type(for:)))
+        var types: Set<HKSampleType> = Set(SampleKind.allCases.map(Self.type(for:)))
+        types.insert(HKObjectType.workoutType())
+        types.insert(HKSeriesType.workoutRoute())
         do {
             try await store.requestAuthorization(toShare: types, read: [])
             authorized = SampleKind.allCases.allSatisfy {
@@ -84,6 +90,64 @@ final class HealthSync: ObservableObject {
             summary.save()
             savedCount += samples.count
             lastSync = Date()
+            lastError = nil
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+}
+
+// MARK: Workouts
+
+extension HealthSync {
+    /// Saves a workout recorded on the watch, with its GPS route. Heart rate, energy and distance
+    /// during the workout already arrive through the normal sync, so the workout carries only
+    /// its totals (adding samples here would count them twice). Idempotent by workout id.
+    func saveWorkout(_ w: [String: Any]) async -> Bool {
+        guard let id = w["id"] as? String, UUID(uuidString: id) != nil,
+              let start = (w["start"] as? NSNumber)?.int64Value, let end = (w["end"] as? NSNumber)?.int64Value,
+              end > start, end - start < 24 * 3600 * 1000 else { return true } // malformed: drop it
+        let kind = w["kind"] as? String ?? "other"
+        let kcal = min(max((w["kcal"] as? NSNumber)?.doubleValue ?? 0, 0), 20_000)
+        let dist = min(max((w["dist"] as? NSNumber)?.doubleValue ?? 0, 0), 500_000)
+        let type: HKWorkoutActivityType = switch kind {
+        case "run": .running
+        case "walk": .walking
+        case "cycle": .cycling
+        case "hike": .hiking
+        default: .other
+        }
+        guard store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized else {
+            lastError = "Allow Galaxy Bridge to save workouts in Apple Health"
+            return false
+        }
+        let startDate = Date(timeIntervalSince1970: Double(start) / 1000)
+        let endDate = Date(timeIntervalSince1970: Double(end) / 1000)
+        let device = HKDevice(name: "Galaxy Watch", manufacturer: "Samsung", model: nil, hardwareVersion: nil,
+                              firmwareVersion: nil, softwareVersion: nil, localIdentifier: nil, udiDeviceIdentifier: nil)
+        let metadata: [String: Any] = [HKMetadataKeySyncIdentifier: "gb-workout-\(id)", HKMetadataKeySyncVersion: 1]
+        let workout = HKWorkout(activityType: type, start: startDate, end: endDate, duration: endDate.timeIntervalSince(startDate),
+                                totalEnergyBurned: kcal > 0 ? HKQuantity(unit: .kilocalorie(), doubleValue: kcal) : nil,
+                                totalDistance: dist > 0 ? HKQuantity(unit: .meter(), doubleValue: dist) : nil,
+                                device: device, metadata: metadata)
+        do {
+            try await store.save(workout)
+            let points = (w["route"] as? [[NSNumber]] ?? []).compactMap { p -> CLLocation? in
+                guard p.count >= 3 else { return nil }
+                let lat = p[1].doubleValue, lon = p[2].doubleValue
+                guard (-90...90).contains(lat), (-180...180).contains(lon) else { return nil }
+                return CLLocation(coordinate: .init(latitude: lat, longitude: lon),
+                                  altitude: p.count > 3 ? p[3].doubleValue : 0, horizontalAccuracy: 10, verticalAccuracy: 15,
+                                  timestamp: Date(timeIntervalSince1970: p[0].doubleValue / 1000))
+            }
+            if !points.isEmpty, store.authorizationStatus(for: HKSeriesType.workoutRoute()) == .sharingAuthorized {
+                let route = HKWorkoutRouteBuilder(healthStore: store, device: device)
+                try await route.insertRouteData(points)
+                _ = try await route.finishRoute(with: workout, metadata: nil)
+            }
+            lastWorkout = workout.workoutActivityType == .other ? "Workout" : kind.capitalized
             lastError = nil
             return true
         } catch {
@@ -149,6 +213,7 @@ struct DaySummary: Codable, Equatable {
             case .steps where item.startDate >= startOfDay: steps += item.value
             case .distance where item.startDate >= startOfDay: distance += item.value
             case .activeEnergy where item.startDate >= startOfDay: energy += item.value
+            case .floors: break
             default: break
             }
         }

@@ -93,6 +93,7 @@ public enum SampleKind: String, Codable, CaseIterable {
     case steps = "steps"         // count over [start, end]
     case activeEnergy = "kcal"   // kilocalories over [start, end]
     case distance = "dist"       // metres over [start, end]
+    case floors = "floors"       // flights climbed over [start, end]
 
     /// Physically plausible bounds per sample, used to reject corrupt or hostile input.
     var validRange: ClosedRange<Double> {
@@ -101,6 +102,7 @@ public enum SampleKind: String, Codable, CaseIterable {
         case .steps: return 0...50_000
         case .activeEnergy: return 0...5_000
         case .distance: return 0...100_000
+        case .floors: return 0...500
         }
     }
 }
@@ -146,6 +148,8 @@ public struct WatchStatus: Codable, Equatable {
         public var dnd: Bool
         /// The watch is subscribed to iPhone notifications (ANCS).
         public var ancs: Bool
+        /// Secure system settings (always-on display, wake gestures…) can be changed.
+        public var secure: Bool?
     }
 }
 
@@ -166,12 +170,27 @@ public enum WatchSetting: String, CaseIterable {
     case ringVolume = "vol.ring"
     /// 0 sound, 1 vibrate, 2 mute.
     case soundMode = "sound"
+    case syncFloors = "sync.floors"
+    case notifyVolume = "vol.notify"
+    case alarmVolume = "vol.alarm"
+    /// 0–4, small to largest.
+    case fontSize = "font"
+    case alwaysOn = "aod"
+    case raiseToWake = "raise"
+    case tapToWake = "tapWake"
+    case bezelWake = "bezelWake"
+    case touchSensitivity = "touchSens"
+    case theatreMode = "theatre"
+    case batterySaver = "saver"
+    case waterLock = "waterLock"
+    case bedtimeMode = "bedtime"
 
     public var range: ClosedRange<Int> {
         switch self {
         case .brightness: return 1...255
         case .screenTimeout: return 5...600
-        case .mediaVolume, .ringVolume: return 0...15
+        case .mediaVolume, .ringVolume, .notifyVolume, .alarmVolume: return 0...15
+        case .fontSize: return 0...4
         case .soundMode: return 0...2
         default: return 0...1
         }

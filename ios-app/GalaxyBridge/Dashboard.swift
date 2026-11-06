@@ -39,6 +39,7 @@ struct Dashboard: View {
                 VStack(spacing: 16) {
                     WatchCard()
                     QuickActions(openCamera: { showCamera = true }, openStore: { showStore = true })
+                    MoreCard()
                     if link.status == .connected, link.watchStatus?.perms.ancs == false { NotificationSetupCard() }
                     if phone.findingPhone { FindingPhoneBanner() }
                     if let off = link.watchStatus?.clockOffset, abs(off) > 60 { ClockWarningCard(offset: off) }
@@ -70,9 +71,7 @@ struct Dashboard: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Galaxy Bridge")
             .fullScreenCover(isPresented: $showCamera) { CameraScreen() }
-            .sheet(isPresented: $showStore) {
-                SafariView(url: PlayStore.watchFaces).ignoresSafeArea()
-            }
+            .navigationDestination(isPresented: $showStore) { StoreScreen() }
             .toolbar {
                 NavigationLink { WatchSettingsView() } label: { Image(systemName: "gearshape.fill") }
                     .accessibilityLabel("Watch settings")
@@ -84,6 +83,31 @@ struct Dashboard: View {
             }
         }
         .tint(Theme.accent)
+    }
+}
+
+// MARK: More features
+
+private struct MoreCard: View {
+    var body: some View {
+        NavigationLink { MoreView() } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.title3).foregroundStyle(.white).frame(width: 44, height: 44)
+                    .background(LinearGradient(colors: [Theme.accent, Theme.accent2], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("More for your watch").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text("Play Store, apps, contacts, notifications, photos, recordings, alarms, tiles")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .card()
+        }
+        .buttonStyle(.plain)
     }
 }
 
