@@ -75,6 +75,8 @@ class LinkService : Service() {
         val hasPhone = MutableStateFlow(false)
         private const val PAIRING_WINDOW_MS = 120_000L
         private const val FIND_ID = 4
+        /** Batches in flight at once; the iPhone saves them to Apple Health concurrently. */
+        private const val WINDOW = 6
 
         fun openPairing() = instance?.setPairingWindow(true)
         fun cancelPairing() = instance?.setPairingWindow(false)
@@ -433,18 +435,18 @@ class LinkService : Service() {
         }
     }
 
-    /** Sends a few batches at a time; the rest follow as acks arrive. */
+    /** Sends up to [WINDOW] full batches at a time; the rest follow as acks arrive. */
     fun flushQueue() {
-        pending.value = queue.size()
-        if (phone == null || !subscribed) return
-        for ((id, items) in queue.pending()) {
-            if (inFlightBatches.size >= 3) break
-            if (id in inFlightBatches) continue
+        if (phone == null || !subscribed) { pending.value = queue.size(); return }
+        if (inFlightBatches.size >= WINDOW) return
+        queue.compact(exclude = inFlightBatches)
+        for ((id, items) in queue.pending(limit = WINDOW - inFlightBatches.size, exclude = inFlightBatches)) {
             inFlightBatches += id
             send(WatchMessages.samples(id, items))
             // If the phone never acks (e.g. it dropped the message), make the batch eligible again.
             handler.postDelayed({ if (inFlightBatches.remove(id)) flushQueue() }, 30_000)
         }
+        pending.value = queue.size()
     }
 
     private fun disconnectAll() {

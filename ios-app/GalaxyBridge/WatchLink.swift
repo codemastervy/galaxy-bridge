@@ -29,6 +29,14 @@ final class WatchLink: NSObject, ObservableObject {
     @Published private(set) var watchStatus: WatchStatus?
     /// True while the watch is ringing for "Find my watch".
     @Published private(set) var findingWatch = false
+    /// Signal strength of the live link in dBm, refreshed every 15 s while connected.
+    @Published private(set) var rssi: Int?
+    @Published private(set) var history: [ConnectionEvent] = ConnectionEvent.load()
+    /// Alert when the watch has been out of reach for a minute.
+    @Published var alertOnDisconnect = UserDefaults.standard.object(forKey: "alertOnDisconnect") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(alertOnDisconnect, forKey: "alertOnDisconnect") }
+    }
+    private var rssiTimer: Timer?
 
     struct NearbyWatch: Identifiable, Equatable {
         let id: UUID
@@ -128,6 +136,32 @@ final class WatchLink: NSObject, ObservableObject {
         guard !writeInFlight, !pendingWrites.isEmpty else { return }
         writeInFlight = true
         p.writeValue(pendingWrites.removeFirst(), for: c, type: .withResponse)
+    }
+
+    private func noteConnection(_ connected: Bool) {
+        history.insert(ConnectionEvent(date: Date(), connected: connected), at: 0)
+        if history.count > 100 { history.removeLast(history.count - 100) }
+        ConnectionEvent.save(history)
+
+        let center = UNUserNotificationCenter.current()
+        rssiTimer?.invalidate()
+        if connected {
+            center.removePendingNotificationRequests(withIdentifiers: ["disconnected"])
+            center.removeDeliveredNotifications(withIdentifiers: ["disconnected"])
+            peripheral?.readRSSI()
+            rssiTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.peripheral?.readRSSI() }
+            }
+        } else {
+            rssi = nil
+            guard alertOnDisconnect else { return }
+            // Only alert if it stays disconnected; a quick reconnect cancels this.
+            let content = UNMutableNotificationContent()
+            content.title = "Watch disconnected"
+            content.body = "Your Galaxy Watch has been out of reach for a minute."
+            center.add(UNNotificationRequest(identifier: "disconnected", content: content,
+                                             trigger: UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)))
+        }
     }
 
     private var warnedLowBattery = false
@@ -296,6 +330,7 @@ extension WatchLink: CBCentralManagerDelegate {
             }
             findingWatch = false
             guard peripheral.identifier == knownId, knownPeripheralIgnored != peripheral.identifier else { return }
+            if status == .connected { noteConnection(false) }
             status = .connecting
             // A pending connect has no timeout, so iOS reconnects when the watch is back in range.
             central.connect(peripheral)
@@ -350,6 +385,7 @@ extension WatchLink: CBPeripheralDelegate {
                 return
             }
             status = .connected
+            noteConnection(true)
             lastError = nil
             if pairingCandidate == peripheral.identifier {
                 pairingCandidate = nil
@@ -361,6 +397,13 @@ extension WatchLink: CBPeripheralDelegate {
             hasKnownWatch = true
             send(.hello(protocolVersion: GBLink.protocolVersion, appVersion: AppInfo.version))
             onConnected?()
+        }
+    }
+
+    nonisolated func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        let value = RSSI.intValue
+        MainActor.assumeIsolated {
+            if error == nil, (-127...0).contains(value) { rssi = value }
         }
     }
 
@@ -387,6 +430,22 @@ extension WatchLink: CBPeripheralDelegate {
             }
             if let toWatch { pumpWrites(peripheral, toWatch) }
         }
+    }
+}
+
+struct ConnectionEvent: Codable, Equatable, Identifiable {
+    var date: Date
+    var connected: Bool
+    var id: Date { date }
+
+    private static let key = "connectionHistory"
+
+    static func load() -> [ConnectionEvent] {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode([ConnectionEvent].self, from: $0) } ?? []
+    }
+
+    static func save(_ events: [ConnectionEvent]) {
+        if let data = try? JSONEncoder().encode(events) { UserDefaults.standard.set(data, forKey: key) }
     }
 }
 

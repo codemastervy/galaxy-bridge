@@ -119,8 +119,18 @@ class MainActivity : ComponentActivity() {
         val needed = setOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)
         if (missing().any { it in needed }) return
         LinkService.start(this)
+        askToIgnoreBatteryOptimisation()
         if (checkSelfPermission(Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED) {
             lifecycleScope.launch { runCatching { Health.register(this@MainActivity) } }
+        }
+    }
+
+    /** Without this Samsung's battery manager stops the link service when the watch idles. */
+    private fun askToIgnoreBatteryOptimisation() {
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        runCatching {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
         }
     }
 

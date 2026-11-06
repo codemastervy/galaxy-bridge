@@ -38,6 +38,16 @@ struct WatchSettingsView: View {
                 Text("Notifications buzz on the watch with their actions. Calls can be answered or declined from the watch; audio stays on the iPhone.")
             }
 
+            Section("Connection") {
+                Toggle(isOn: $link.alertOnDisconnect) {
+                    Label { Text("Alert when disconnected") } icon: { icon("antenna.radiowaves.left.and.right.slash", .orange) }
+                }
+                if let rssi = link.rssi {
+                    LabeledContent("Signal", value: "\(rssi) dBm · \(rssi > -65 ? "Strong" : rssi > -80 ? "Good" : "Weak")")
+                }
+                NavigationLink("Connection history") { ConnectionHistoryView() }
+            }
+
             Section("Music") {
                 toggle("Music controls on watch", .music, symbol: "music.note", color: .pink)
             }
@@ -132,5 +142,25 @@ struct WatchSettingsView: View {
 
     private func gb(_ mb: Int) -> String {
         (Double(mb) / 1000).formatted(.number.precision(.fractionLength(1))) + " GB"
+    }
+}
+
+struct ConnectionHistoryView: View {
+    @EnvironmentObject var link: WatchLink
+
+    var body: some View {
+        List(link.history) { e in
+            Label {
+                VStack(alignment: .leading) {
+                    Text(e.connected ? "Connected" : "Disconnected")
+                    Text(e.date.formatted(date: .abbreviated, time: .standard)).font(.caption).foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: e.connected ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(e.connected ? .green : .red)
+            }
+        }
+        .overlay { if link.history.isEmpty { ContentUnavailableView("No history yet", systemImage: "clock") } }
+        .navigationTitle("Connection history")
     }
 }
