@@ -142,6 +142,9 @@ class AppleClient(
             // iOS refuses (status 3) when "Share System Notifications" is off for this watch.
             if (d.characteristic.uuid == Ancs.NOTIFICATION_SOURCE) {
                 connected.value = status == BluetoothGatt.GATT_SUCCESS && controlPoint != null
+                // iOS doesn't tell us when the user turns sharing on, so keep asking.
+                main.removeCallbacks(resubscribeAncs)
+                if (!connected.value) main.postDelayed(resubscribeAncs, 20_000)
             }
             opDone()
         }.let { }
@@ -164,6 +167,13 @@ class AppleClient(
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             changed(c, value)
         }
+    }
+
+    private val resubscribeAncs = Runnable {
+        val ancs = gatt?.getService(Ancs.SERVICE) ?: return@Runnable
+        if (connected.value) return@Runnable
+        ancs.getCharacteristic(Ancs.DATA_SOURCE)?.let { subscribe(it) }
+        ancs.getCharacteristic(Ancs.NOTIFICATION_SOURCE)?.let { subscribe(it) }
     }
 
     /** iOS sometimes hides ANCS until the link is encrypted; look again shortly. */
