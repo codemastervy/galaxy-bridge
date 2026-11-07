@@ -30,6 +30,12 @@ import androidx.wear.watchface.complications.rendering.CanvasComplicationDrawabl
 import androidx.wear.watchface.complications.rendering.ComplicationDrawable
 import androidx.wear.watchface.complications.rendering.ComplicationStyle
 import androidx.wear.watchface.style.CurrentUserStyleRepository
+import androidx.wear.watchface.style.UserStyleSchema
+import androidx.wear.watchface.style.UserStyleSetting
+import androidx.wear.watchface.style.UserStyleSetting.ComplicationSlotsUserStyleSetting
+import androidx.wear.watchface.style.UserStyleSetting.ComplicationSlotsUserStyleSetting.ComplicationSlotOverlay
+import androidx.wear.watchface.style.UserStyleSetting.ComplicationSlotsUserStyleSetting.ComplicationSlotsOption
+import androidx.wear.watchface.style.WatchFaceLayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +61,44 @@ class BridgeFaceService : WatchFaceService() {
             RIGHT to RectF(0.60f, 0.40f, 0.80f, 0.60f),
             BOTTOM to RectF(0.40f, 0.65f, 0.60f, 0.85f),
         )
+
+        /**
+         * Where the three complications sit, per arrangement (centres in face-radius units,
+         * 0,0 = middle). Must match slotPositions in FaceSpecs.swift.
+         */
+        val ARRANGEMENTS: Map<String, Map<Int, Triple<Float, Float, Float>>> = mapOf(
+            "std" to mapOf(LEFT to Triple(-.4f, 0f, .2f), RIGHT to Triple(.4f, 0f, .2f), BOTTOM to Triple(0f, .5f, .2f)),
+            "low" to mapOf(LEFT to Triple(-.48f, .3f, .18f), RIGHT to Triple(.48f, .3f, .18f), BOTTOM to Triple(0f, .64f, .17f)),
+            "top" to mapOf(LEFT to Triple(-.42f, -.42f, .18f), RIGHT to Triple(.42f, -.42f, .18f), BOTTOM to Triple(0f, .58f, .19f)),
+            "wide" to mapOf(LEFT to Triple(-.56f, 0f, .17f), RIGHT to Triple(.56f, 0f, .17f), BOTTOM to Triple(0f, .6f, .18f)),
+        )
+        private val ORDER = listOf(LEFT, RIGHT, BOTTOM)
+        const val STYLE_SLOTS = "slots"
+
+        fun optionId(arrangement: String, shown: Set<String>) =
+            "$arrangement:" + listOf("left", "right", "bottom").joinToString("") { if (it in shown) "1" else "0" }
+
+        fun rect(c: Triple<Float, Float, Float>) =
+            RectF(.5f + (c.first - c.third) / 2, .5f + (c.second - c.third) / 2, .5f + (c.first + c.third) / 2, .5f + (c.second + c.third) / 2)
+    }
+
+    override fun createUserStyleSchema(): UserStyleSchema {
+        val options = ARRANGEMENTS.flatMap { (name, pos) ->
+            (0 until 8).map { mask ->
+                val overlays = ORDER.mapIndexed { i, id ->
+                    ComplicationSlotOverlay.Builder(id)
+                        .setEnabled(mask and (4 shr i) != 0)
+                        .setComplicationSlotBounds(ComplicationSlotBounds(rect(pos.getValue(id))))
+                        .build()
+                }
+                val key = "$name:" + (0 until 3).joinToString("") { if (mask and (4 shr it) != 0) "1" else "0" }
+                ComplicationSlotsOption(UserStyleSetting.Option.Id(key), key, key, null, overlays)
+            }
+        }
+        val setting = ComplicationSlotsUserStyleSetting(
+            UserStyleSetting.Id(STYLE_SLOTS), "Complications", "Complication layout", null, options,
+            listOf(WatchFaceLayer.COMPLICATIONS), options.first { it.id.value.decodeToString() == "std:111" })
+        return UserStyleSchema(listOf(setting))
     }
 
     override fun createComplicationSlotsManager(currentUserStyleRepository: CurrentUserStyleRepository): ComplicationSlotsManager {
@@ -94,7 +138,7 @@ class FaceRenderer(
     surfaceHolder: SurfaceHolder,
     watchState: WatchState,
     private val slots: ComplicationSlotsManager,
-    repo: CurrentUserStyleRepository,
+    private val repo: CurrentUserStyleRepository,
 ) : Renderer.CanvasRenderer2<FaceRenderer.Assets>(surfaceHolder, repo, watchState, CanvasType.HARDWARE, 1000L, false) {
 
     class Assets : Renderer.SharedAssets { override fun onDestroy() {} }
@@ -110,11 +154,25 @@ class FaceRenderer(
 
     init {
         scope.launch {
-            FaceDesign.current.collect { design = it; styleComplications(); invalidate() }
+            FaceDesign.current.collect { design = it; applySlots(it); styleComplications(); invalidate() }
         }
     }
 
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
+
+    /** Moves, shows or hides the complications to suit the design. */
+    private fun applySlots(d: FaceDesign) {
+        val spec = d.spec
+        val arrangement = spec?.optString("slotpos")?.takeIf { it in BridgeFaceService.ARRANGEMENTS } ?: "std"
+        val key = BridgeFaceService.optionId(arrangement, if (spec != null) SpecDraw.slots(spec) else setOf("left", "right", "bottom"))
+        runCatching {
+            val setting = repo.schema.userStyleSettings.first { it.id.value == BridgeFaceService.STYLE_SLOTS }
+            val option = setting.options.first { it.id.value.decodeToString() == key }
+            if (repo.userStyle.value[setting] != option) {
+                repo.updateUserStyle(repo.userStyle.value.toMutableUserStyle().apply { this[setting] = option }.toUserStyle())
+            }
+        }.onFailure { android.util.Log.w("BridgeFace", "slots", it) }
+    }
 
     private fun styleComplications() {
         for (slot in slots.complicationSlots.values) {
@@ -147,6 +205,16 @@ class FaceRenderer(
             ink = if (ambient) 0xFFDDDDDD.toInt() else d.ink,
             dim = if (ambient) 0x66FFFFFF else d.dim)
 
+        val spec = d.spec
+        if (d.layout == "spec" && spec != null) {
+            val v = SpecDraw.Values(zonedDateTime, DateFormat.is24HourFormat(context), battery())
+            val pal = SpecDraw.Pal(d.bg1, d.bg2, d.accent, d.ink)
+            SpecDraw.draw(canvas, f.cx, f.cy, f.r, spec, pal, v, ambient, 0, p)
+            for (slot in slots.complicationSlots.values) if (slot.enabled) slot.render(canvas, zonedDateTime, renderParameters)
+            SpecDraw.draw(canvas, f.cx, f.cy, f.r, spec, pal, v, ambient, 1, p)
+            return
+        }
+
         if (ambient) canvas.drawColor(Color.BLACK) else {
             val key = "${d.bg1}/${d.bg2}/$s"
             if (key != bgKey) {
@@ -162,6 +230,18 @@ class FaceRenderer(
         FaceDraw.background(f, d.layout, t, p, bold)
         for (slot in slots.complicationSlots.values) if (slot.enabled) slot.render(canvas, zonedDateTime, renderParameters)
         FaceDraw.foreground(f, d.layout, t, p, bold)
+    }
+
+    private var batteryAt = 0L
+    private var batteryPct = 0
+    private fun battery(): Int {
+        val now = System.currentTimeMillis()
+        if (now - batteryAt > 60_000) {
+            batteryAt = now
+            batteryPct = context.getSystemService(android.os.BatteryManager::class.java)
+                ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)?.coerceIn(0, 100) ?: 0
+        }
+        return batteryPct
     }
 }
 

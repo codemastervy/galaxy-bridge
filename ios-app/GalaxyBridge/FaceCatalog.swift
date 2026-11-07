@@ -8,11 +8,21 @@ struct FaceDesign: Identifiable, Hashable, Codable {
     let name: String
     let layout: String
     let bg1: String, bg2: String, accent: String, ink: String
+    /// For layout "spec": which FaceSpecs entry draws it.
+    var specID: String? = nil
+    /// The style this design belongs to (a layout or spec id).
+    var style: String { specID ?? layout }
+    var palette: FaceCatalog.Palette { FaceCatalog.Palette(id: id, name: name, bg1: bg1, bg2: bg2, accent: accent, ink: ink) }
 
-    var json: [String: Any] { ["id": id, "name": name, "layout": layout, "bg1": bg1, "bg2": bg2, "accent": accent, "ink": ink] }
+    var json: [String: Any] {
+        var j: [String: Any] = ["id": id, "name": name, "layout": layout, "bg1": bg1, "bg2": bg2, "accent": accent, "ink": ink]
+        if let s = specID.flatMap(FaceSpecs.spec) { j["spec"] = s.json }
+        return j
+    }
 
-    init(id: String, name: String, layout: String, bg1: String, bg2: String, accent: String, ink: String) {
+    init(id: String, name: String, layout: String, bg1: String, bg2: String, accent: String, ink: String, specID: String? = nil) {
         self.id = id; self.name = name; self.layout = layout; self.bg1 = bg1; self.bg2 = bg2; self.accent = accent; self.ink = ink
+        self.specID = specID
     }
 
     init?(json j: [String: Any]) {
@@ -20,7 +30,8 @@ struct FaceDesign: Identifiable, Hashable, Codable {
               FaceCatalog.layouts.contains(where: { $0.id == layout }),
               let bg1 = j["bg1"] as? String, let bg2 = j["bg2"] as? String,
               let accent = j["accent"] as? String, let ink = j["ink"] as? String else { return nil }
-        self.init(id: String(id.prefix(60)), name: String(name.prefix(40)), layout: layout, bg1: bg1, bg2: bg2, accent: accent, ink: ink)
+        let specID = layout == "spec" ? FaceCatalog.all.first(where: { $0.id == id })?.specID : nil
+        self.init(id: String(id.prefix(60)), name: String(name.prefix(40)), layout: layout, bg1: bg1, bg2: bg2, accent: accent, ink: ink, specID: specID)
     }
 }
 
@@ -37,6 +48,7 @@ enum FaceCatalog {
         Layout(id: "orbit", title: "Orbit", blurb: "Planets mark the time"),
         Layout(id: "sport", title: "Sport", blurb: "Bezel scale, big digits"),
         Layout(id: "radar", title: "Radar", blurb: "Sweeping scanner seconds"),
+        Layout(id: "spec", title: "", blurb: ""),
     ]
 
     static let palettes: [Palette] = [
@@ -82,13 +94,30 @@ enum FaceCatalog {
         Palette(id: "carbon", name: "Carbon", bg1: "#1C1C1E", bg2: "#060606", accent: "#30D158", ink: "#FFFFFF"),
     ]
 
-    /// Every layout in every palette: 8 × 40 = 320 faces.
-    static let all: [FaceDesign] = layouts.flatMap { l in
-        palettes.map { p in
-            FaceDesign(id: "\(p.id)-\(l.id)", name: "\(p.name) \(l.title)", layout: l.id,
-                       bg1: p.bg1, bg2: p.bg2, accent: p.accent, ink: p.ink)
-        }
+    struct Style: Identifiable {
+        let id: String, title: String, blurb: String
+        let faces: [FaceDesign]
+        var cover: FaceDesign { faces[0] }
     }
+
+    /// Every style (the built-in layouts plus every spec in faces/specs.json), each in its palettes.
+    static let styles: [Style] = {
+        let specStyles = FaceSpecs.all.map { s in
+            Style(id: s.id, title: s.name, blurb: s.blurb, faces: s.palettes.map { p in
+                FaceDesign(id: "\(s.id)-\(p.id)", name: "\(s.name) \(p.name)", layout: "spec",
+                           bg1: p.bg1, bg2: p.bg2, accent: p.accent, ink: p.ink, specID: s.id)
+            })
+        }
+        let classic = layouts.filter { $0.id != "spec" }.map { l in
+            Style(id: l.id, title: l.title, blurb: l.blurb, faces: palettes.map { p in
+                FaceDesign(id: "\(p.id)-\(l.id)", name: "\(p.name) \(l.title)", layout: l.id,
+                           bg1: p.bg1, bg2: p.bg2, accent: p.accent, ink: p.ink)
+            })
+        }
+        return specStyles + classic
+    }()
+
+    static let all: [FaceDesign] = styles.flatMap(\.faces)
 }
 
 extension Color {
@@ -108,7 +137,13 @@ struct FaceRender: View {
     static let sampleDate: Date = Calendar.current.date(bySettingHour: 10, minute: 9, second: 36, of: Date()) ?? Date()
 
     var body: some View {
-        Canvas { ctx, size in draw(&ctx, size) }
+        Canvas { ctx, size in
+            if let spec = design.specID.flatMap(FaceSpecs.spec) {
+                SpecPainter(spec: spec.json, pal: design.palette, date: date, showComplications: showComplications).draw(&ctx, size)
+            } else {
+                draw(&ctx, size)
+            }
+        }
             .clipShape(Circle())
             .aspectRatio(1, contentMode: .fit)
             .accessibilityLabel(design.name)
@@ -249,37 +284,82 @@ struct FaceRender: View {
 
 struct FaceGalleryView: View {
     @EnvironmentObject var hub: FeatureHub
-    @EnvironmentObject var link: WatchLink
-    @State private var layout: String? = nil
     @State private var query = ""
     @State private var selected: FaceDesign?
 
-    private var faces: [FaceDesign] {
-        FaceCatalog.all.filter { (layout == nil || $0.layout == layout) && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) }
+    private var styles: [FaceCatalog.Style] {
+        query.isEmpty ? FaceCatalog.styles : FaceCatalog.styles.filter {
+            $0.title.localizedCaseInsensitiveContains(query) || $0.blurb.localizedCaseInsensitiveContains(query)
+        }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        chip("All", nil)
-                        ForEach(FaceCatalog.layouts) { chip($0.title, $0.id) }
+            VStack(alignment: .leading, spacing: 16) {
+                if let d = hub.design, let style = FaceCatalog.styles.first(where: { $0.id == d.style }) {
+                    NavigationLink { FaceStyleView(style: style) } label: {
+                        HStack(spacing: 14) {
+                            FaceRender(design: d).frame(width: 64, height: 64)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("On your watch").font(.caption).foregroundStyle(Theme.accent2)
+                                Text(d.name).font(.headline).foregroundStyle(.white)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.4))
+                        }
+                        .padding(14).card(cornerRadius: 22)
                     }
+                    .buttonStyle(PressScale())
                     .padding(.horizontal, 16)
                 }
-                if let l = layout, let info = FaceCatalog.layouts.first(where: { $0.id == l }) {
-                    Text(info.blurb).font(.subheadline).foregroundStyle(.white.opacity(0.6)).padding(.horizontal, 16)
+                SectionTitle(text: "\(styles.count) styles · \(FaceCatalog.all.count) faces").padding(.horizontal, 16)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 20) {
+                    ForEach(styles) { style in
+                        NavigationLink { FaceStyleView(style: style) } label: {
+                            VStack(spacing: 8) {
+                                FaceRender(design: style.cover)
+                                    .shadow(color: Color(hex: style.cover.accent).opacity(0.4), radius: 10)
+                                Text(style.title).font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                                Text("\(style.faces.count) colours").font(.caption2).foregroundStyle(.white.opacity(0.55))
+                            }
+                        }
+                        .buttonStyle(PressScale())
+                    }
                 }
+                .padding(.horizontal, 16)
+                Text("All free. Designed for Wear OS Bridge.").font(.caption).foregroundStyle(.white.opacity(0.5))
+                    .frame(maxWidth: .infinity).padding(.bottom, 24)
+            }
+            .padding(.top, 8)
+        }
+        .auroraScreen()
+        .navigationTitle("Face gallery")
+        .searchable(text: $query, prompt: "Search styles")
+        .task { hub.requestDesign() }
+        .toast($hub.toast)
+    }
+}
+
+/// Every colour of one style.
+struct FaceStyleView: View {
+    @EnvironmentObject var hub: FeatureHub
+    let style: FaceCatalog.Style
+    @State private var selected: FaceDesign?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                Text(style.blurb).font(.subheadline).foregroundStyle(.white.opacity(0.65)).padding(.horizontal, 16)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 18) {
-                    ForEach(faces) { f in
+                    ForEach(style.faces) { f in
                         Button { selected = f } label: {
                             VStack(spacing: 6) {
                                 FaceRender(design: f)
                                     .overlay(Circle().strokeBorder(hub.design?.id == f.id ? Theme.accent2 : .white.opacity(0.12),
                                                                    lineWidth: hub.design?.id == f.id ? 3 : 1))
                                     .shadow(color: Color(hex: f.accent).opacity(0.35), radius: 8)
-                                Text(f.name).font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+                                Text(f.name.replacingOccurrences(of: style.title + " ", with: ""))
+                                    .font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
                                     .lineLimit(1).minimumScaleFactor(0.8)
                             }
                         }
@@ -287,27 +367,13 @@ struct FaceGalleryView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                Text("\(faces.count) faces · all free").font(.caption).foregroundStyle(.white.opacity(0.5))
-                    .frame(maxWidth: .infinity).padding(.bottom, 20)
             }
-            .padding(.top, 8)
+            .padding(.vertical, 10)
         }
         .auroraScreen()
-        .navigationTitle("Face gallery")
-        .searchable(text: $query, prompt: "Search 320 faces")
+        .navigationTitle(style.title)
         .sheet(item: $selected) { FaceDetailView(design: $0).presentationDetents([.large]) }
-        .task { hub.requestDesign() }
         .toast($hub.toast)
-    }
-
-    private func chip(_ title: String, _ id: String?) -> some View {
-        Button { withAnimation { layout = id } } label: {
-            Text(title).font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(layout == id ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
-                .foregroundStyle(.white)
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -330,7 +396,7 @@ struct FaceDetailView: View {
 
                     VStack(spacing: 4) {
                         Text(design.name).font(.title2.weight(.bold)).foregroundStyle(.white)
-                        Text(FaceCatalog.layouts.first { $0.id == design.layout }?.blurb ?? "")
+                        Text(FaceCatalog.styles.first { $0.id == design.style }?.blurb ?? "")
                             .font(.subheadline).foregroundStyle(.white.opacity(0.6))
                     }
 

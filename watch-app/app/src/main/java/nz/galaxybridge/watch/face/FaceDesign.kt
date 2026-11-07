@@ -17,14 +17,18 @@ data class FaceDesign(
     val bg2: Int,
     val accent: Int,
     val ink: Int,
+    /** For layout "spec": the element list drawn by SpecDraw. */
+    val spec: JSONObject? = null,
 ) {
     val dim: Int get() = (ink and 0x00FFFFFF) or (0x70 shl 24)
 
     fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("layout", layout)
         .put("bg1", hex(bg1)).put("bg2", hex(bg2)).put("accent", hex(accent)).put("ink", hex(ink))
+        .apply { spec?.let { put("spec", it) } }
 
     companion object {
-        val LAYOUTS = setOf("classic", "minimal", "bold", "digital", "ring", "orbit", "sport", "radar")
+        val LAYOUTS = setOf("classic", "minimal", "bold", "digital", "ring", "orbit", "sport", "radar", "spec")
+        private const val MAX_SPEC_CHARS = 24_000
         val DEFAULT = FaceDesign("aurora-classic", "Aurora Classic", "classic",
             0xFF1B1E4B.toInt(), 0xFF05060F.toInt(), 0xFF2ED1DB.toInt(), Color.WHITE)
 
@@ -52,9 +56,15 @@ data class FaceDesign(
             val layout = j.optString("layout").takeIf { it in LAYOUTS } ?: return null
             val id = j.optString("id").takeIf { it.length in 1..60 && it.all { ch -> ch.isLetterOrDigit() || ch == '-' } } ?: return null
             val name = j.optString("name").filter { !it.isISOControl() }.take(40).ifEmpty { return null }
+            val spec = if (layout == "spec") {
+                val sp = j.optJSONObject("spec") ?: return null
+                if (sp.toString().length > MAX_SPEC_CHARS) return null
+                if ((sp.optJSONArray("els")?.length() ?: 0) !in 1..SpecDraw.MAX_ELEMENTS) return null
+                sp
+            } else null
             return FaceDesign(id, name, layout,
                 color(j, "bg1") ?: return null, color(j, "bg2") ?: return null,
-                color(j, "accent") ?: return null, color(j, "ink") ?: return null)
+                color(j, "accent") ?: return null, color(j, "ink") ?: return null, spec)
         }
 
         private val HEX = Regex("^#[0-9A-Fa-f]{6}$")

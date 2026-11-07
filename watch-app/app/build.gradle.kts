@@ -14,8 +14,8 @@ android {
         applicationId = "nz.galaxybridge.watch"
         minSdk = 30
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.0"
+        versionCode = 5
+        versionName = "1.1.0"
     }
 
     // Release key lives outside git (tools/signing); without it the release build is unsigned.

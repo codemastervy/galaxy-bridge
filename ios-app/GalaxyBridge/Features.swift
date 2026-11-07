@@ -379,7 +379,7 @@ struct MoreView: View {
     private var groups: [(String, [Item])] {
         [
             ("Customise", [
-                Item(title: "Face gallery", sub: "320 free faces", symbol: "sparkles", color: .pink, dest: AnyView(FaceGalleryView())),
+                Item(title: "Face gallery", sub: "\(FaceCatalog.all.count) free faces", symbol: "sparkles", color: .pink, dest: AnyView(FaceGalleryView())),
                 Item(title: "Watch faces", sub: "On your watch now", symbol: "paintpalette.fill", color: .orange, dest: AnyView(WatchFacesView())),
                 Item(title: "Google Play", sub: "Faces and apps", symbol: "bag.fill", color: .green, dest: AnyView(StoreScreen())),
                 Item(title: "Watch apps", sub: "Open or uninstall", symbol: "square.grid.2x2.fill", color: .blue, dest: AnyView(AppsView())),
@@ -456,14 +456,14 @@ struct WatchFacesView: View {
                 NavigationLink { FaceGalleryView() } label: {
                     HStack(spacing: 14) {
                         HStack(spacing: -14) {
-                            ForEach([FaceCatalog.all[0], FaceCatalog.all[81], FaceCatalog.all[163], FaceCatalog.all[250]]) {
+                            ForEach(FaceCatalog.styles.prefix(4).map(\.cover)) {
                                 FaceRender(design: $0, showComplications: false).frame(width: 40, height: 40)
                                     .overlay(Circle().strokeBorder(.black, lineWidth: 2))
                             }
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Face gallery").font(.headline).foregroundStyle(.white)
-                            Text("320 free faces by Wear OS Bridge").font(.caption).foregroundStyle(.white.opacity(0.6))
+                            Text("\(FaceCatalog.all.count) free faces in \(FaceCatalog.styles.count) styles").font(.caption).foregroundStyle(.white.opacity(0.6))
                         }
                         Spacer()
                         Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.4))

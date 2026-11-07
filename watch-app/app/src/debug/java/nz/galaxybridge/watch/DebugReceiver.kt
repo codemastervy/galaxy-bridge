@@ -11,6 +11,7 @@ import android.util.Log
  * adb shell am broadcast -n nz.galaxybridge.watch/.DebugReceiver -a nz.galaxybridge.watch.debug.FORGET_IPHONE
  * adb shell am broadcast -n nz.galaxybridge.watch/.DebugReceiver -a nz.galaxybridge.watch.debug.HFP
  * adb shell am broadcast -n nz.galaxybridge.watch/.DebugReceiver -a nz.galaxybridge.watch.debug.FACE
+ * adb shell am broadcast -n nz.galaxybridge.watch/.DebugReceiver -a nz.galaxybridge.watch.debug.DESIGN
  */
 class DebugReceiver : BroadcastReceiver() {
     @SuppressLint("MissingPermission")
@@ -51,6 +52,13 @@ class DebugReceiver : BroadcastReceiver() {
                     java.io.File(context.cacheDir, "face-$layout.png").outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
                 }
                 Log.i("WatchFaces", "rendered")
+            }
+            "nz.galaxybridge.watch.debug.DESIGN" -> {
+                // Loads files/design.json (copied in with run-as) as the face design.
+                val f = java.io.File(context.filesDir, "design.json")
+                val d = runCatching { nz.galaxybridge.watch.face.FaceDesign.parse(org.json.JSONObject(f.readText())) }.getOrNull()
+                if (d != null) nz.galaxybridge.watch.face.FaceDesign.save(context, d)
+                Log.i("WatchFaces", "design ${d?.id ?: "rejected"}")
             }
             "nz.galaxybridge.watch.debug.HFP" -> {
                 val adapter = context.getSystemService(BluetoothManager::class.java).adapter

@@ -15,9 +15,14 @@ watch faces, apps, settings and more.
   <img src="docs/screenshots/watch-settings.png" width="200" alt="Watch app settings">
 </p>
 
-**320 free watch faces**, picked from the iPhone app and set on the watch:
+**1,697 free watch faces in 45 styles**, picked from the iPhone app and shown on the watch at once:
 
-<p align="center"><img src="docs/screenshots/face-gallery.png" width="760" alt="A sample of the 320 faces in the face gallery"></p>
+<p align="center">
+  <img src="docs/screenshots/watch-face-rotor.png" width="200" alt="Rotor face on the watch: rotating hour scale">
+  <img src="docs/screenshots/watch-face-nixie.png" width="200" alt="Nixie face on the watch: glowing digits">
+  <img src="docs/screenshots/watch-face-gauge.png" width="200" alt="Gauge face on the watch">
+</p>
+<p align="center"><img src="docs/screenshots/face-styles.png" width="760" alt="All 45 face styles"></p>
 
 ## Download
 
@@ -49,9 +54,12 @@ Tested on a Galaxy Watch4 Classic (SM-R890, Wear OS 5 / One UI Watch 6) with an 
 - Readings are queued on the watch and deleted only after Apple Health confirms it stored them
 
 **Watch faces**
-- Face gallery: 320 free faces (8 layouts × 40 colour palettes). Tap one on the iPhone and it shows
-  on the watch. Each has three complications you set from the watch's own face editor, and a
-  low-power always-on mode
+- Face gallery: 1,697 free faces in 45 styles: analog, digital, typographic, retro (Nixie, LCD,
+  split-flap), data (rings, gauges, binary, word clock), dive, pilot, compass, chronograph and
+  more, each in its own colours. Tap one on the iPhone and it shows on the watch. Faces have up to
+  three complications you set from the watch's own face editor, and a low-power always-on mode
+- Faces are described in [faces/specs.json](faces/specs.json) and drawn by the same small engine on
+  both devices, so new faces need no app code (run `scripts/gen_face_specs.py` after editing)
 - The iPhone shows your watch with the face that's on it now, plus every installed face with previews
 - Google Play inside the iPhone app: browse faces and watch apps, then tap **Install on watch**
 
@@ -81,8 +89,9 @@ Tested on a Galaxy Watch4 Classic (SM-R890, Wear OS 5 / One UI Watch 6) with an 
   see [docs/NATIVE_PAIRING.md](docs/NATIVE_PAIRING.md), [HANDOFF.md](HANDOFF.md) and
   [research/PROTOCOL_NOTES.md](research/PROTOCOL_NOTES.md).
 - **Watch faces:** Wear OS only lets Samsung's own software switch faces. The first time you pick
-  a gallery face, choose **Wear OS Bridge** in the watch's face picker. After that, designs switch
-  instantly. Faces from Google Play are installed from the iPhone but selected on the watch.
+  a gallery face, choose **Wear OS Bridge** in the watch's face picker (or from a Mac, see below).
+  After that, designs switch instantly. Faces from Google Play are installed from the iPhone but
+  selected on the watch.
 - Not possible for third-party apps on this watch: sending SMS (the watch has no Bluetooth message
   profile), SpO2/ECG/body composition (Samsung-only sensors) and setting the system clock.
 - iPhone notifications on the watch need **Share System Notifications** turned on for the watch in
@@ -95,7 +104,7 @@ Tested on a Galaxy Watch4 Classic (SM-R890, Wear OS 5 / One UI Watch 6) with an 
 Turn on **Developer options → Wireless debugging** on the watch, connect with `adb`, then:
 
 ```sh
-adb install WearOSBridge-1.0.0.apk
+adb install WearOSBridge-1.1.0.apk
 ```
 
 Some features need one-time permissions that only `adb` can grant (they're optional; each feature
@@ -113,6 +122,9 @@ adb shell cmd notification allow_dnd $P                          # Do Not Distur
 adb shell dumpsys deviceidle whitelist +$P                       # stay connected in the background
 adb shell settings put global hidden_api_policy 1                # call audio, forgetting the iPhone
 ```
+
+To make Wear OS Bridge the active face from a Mac instead of the watch's picker, the adb shell
+(which may switch faces) can do it with a tiny helper; see `scripts/set_face.sh`.
 
 ## Pairing
 
